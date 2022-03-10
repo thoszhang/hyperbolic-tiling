@@ -1,4 +1,4 @@
-const RADIUS = 200;
+const RADIUS = 400;
 const CANVAS_SIZE = 2 * RADIUS;
 
 type CanvasCoord = { cx: number; cy: number };
@@ -99,9 +99,11 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
   const Bsq =
     (cos_b + cos_c * cos_a - sin_c * sin_a) /
     (cos_b + cos_c * cos_a + sin_c * sin_a);
+  const C = Math.sqrt(Csq);
+  const B = Math.sqrt(Bsq);
   // sideSq is the squared Euclidean distance between the b and c vertices
   // obtained via the law of cosines.
-  const sideSq = Csq + Bsq - 2 * Math.sqrt(Csq * Bsq) * cos_a;
+  const sideSq = Csq + Bsq - 2 * C * B * cos_a;
   const radiusSq =
     sideSq /
     (2 *
@@ -143,6 +145,14 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
     return modSq(sub(z, center)) >= radiusSq;
   }
 
+  const q_prCenterX = (B + 1 / B) / (2 * cos_a);
+  const q_prRadiusSq = q_prCenterX * q_prCenterX - 1;
+  const q_prCenter = { re: q_prCenterX, im: 0 };
+
+  function q_prRegion(z: C): 0 | 1 {
+    return modSq(sub(z, q_prCenter)) < q_prRadiusSq ? 1 : 0;
+  }
+
   const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
   const data = imgData.data;
 
@@ -174,11 +184,13 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
         numRefls += 1;
       }
 
-      const odd = numRefls % 2 == 1;
+      const odd = numRefls % 2;
+      const region = q_prRegion(z);
+      const val = region * 128 + odd * 32;
 
-      data[(cy * CANVAS_SIZE + cx) * 4 + 0] = odd ? 255 : 0;
-      data[(cy * CANVAS_SIZE + cx) * 4 + 1] = odd ? 255 : 0;
-      data[(cy * CANVAS_SIZE + cx) * 4 + 2] = odd ? 255 : 0;
+      data[(cy * CANVAS_SIZE + cx) * 4 + 0] = val;
+      data[(cy * CANVAS_SIZE + cx) * 4 + 1] = val;
+      data[(cy * CANVAS_SIZE + cx) * 4 + 2] = val;
       data[(cy * CANVAS_SIZE + cx) * 4 + 3] = 255;
     }
   }
