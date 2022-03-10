@@ -15,6 +15,10 @@ function fromReal(x: number): C {
   return { re: x, im: 0 };
 }
 
+function neg(z: C): C {
+  return { re: -z.re, im: -z.im };
+}
+
 function conj(z: C): C {
   return { re: z.re, im: -z.im };
 }
@@ -78,37 +82,65 @@ function complex(c: CanvasCoord): C {
 type Params = { p: number; q: number; r: number };
 
 function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
-  const matA: Mat = [fromReal(1), fromReal(0), fromReal(0), fromReal(1)];
+  const a = Math.PI / params.p;
+  const b = Math.PI / params.q;
+  const c = Math.PI / params.r;
+  const sin_a = Math.sin(a);
+  const cos_a = Math.cos(a);
+  const sin_b = Math.sin(b);
+  const cos_b = Math.cos(b);
+  const sin_c = Math.sin(c);
+  const cos_c = Math.cos(c);
+
+  // Csq and Bsq are squared Euclidean distances.
+  const Csq =
+    (cos_c + cos_a * cos_b - sin_a * sin_b) /
+    (cos_c + cos_a * cos_b + sin_a * sin_b);
+  const Bsq =
+    (cos_b + cos_c * cos_a - sin_c * sin_a) /
+    (cos_b + cos_c * cos_a + sin_c * sin_a);
+  // sideSq is the squared Euclidean distance between the b and c vertices
+  // obtained via the law of cosines.
+  const sideSq = Csq + Bsq - 2 * Math.sqrt(Csq * Bsq) * cos_a;
+  const radiusSq =
+    sideSq /
+    (2 *
+      (1 +
+        cos_a * cos_b * cos_c -
+        sin_a * sin_b * cos_c -
+        sin_a * cos_b * sin_c -
+        cos_a * sin_b * sin_c));
+  const center = add(
+    fromReal(Math.sqrt(Csq)),
+    fromPolar(Math.sqrt(radiusSq), Math.PI / 2 - b)
+  );
+
+  const matC: Mat = [fromReal(1), fromReal(0), fromReal(0), fromReal(1)];
+
   const matB: Mat = [
-    fromPolar(1, Math.PI / params.p),
+    fromPolar(1, a),
     fromReal(0),
     fromReal(0),
-    fromPolar(1, -Math.PI / params.p),
-  ];
-  const alpha = Math.PI / params.q;
-  const beta = Math.PI / params.p;
-  const k =
-    ((Math.sin(alpha) * Math.cos(alpha + beta)) / Math.sin(beta) + 1) /
-    Math.sin(alpha + beta);
-  const radiusSq = 1 / ((k + 1) * (k - 1));
-  const center = k * Math.pow(radiusSq, 0.5);
-  const matC: Mat = [
-    fromReal(center),
-    fromReal(-1),
-    fromReal(1),
-    fromReal(-center),
+    fromPolar(1, -a),
   ];
 
-  function insideA(z: C): boolean {
+  const matA: Mat = [
+    center,
+    fromReal(radiusSq - modSq(center)),
+    fromReal(1),
+    neg(conj(center)),
+  ];
+
+  function insideC(z: C): boolean {
     return z.im >= 0;
   }
 
   function insideB(z: C): boolean {
-    return arg(z) <= beta && arg(z) >= -Math.PI + beta;
+    return arg(z) <= a && arg(z) >= -Math.PI + a;
   }
 
-  function insideC(z: C): boolean {
-    return modSq(sub(z, { re: center, im: 0 })) >= radiusSq;
+  function insideA(z: C): boolean {
+    return modSq(sub(z, center)) >= radiusSq;
   }
 
   const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
@@ -176,7 +208,6 @@ function main(): void {
   const rInput = document.getElementById("input-r") as HTMLInputElement;
   rInput.min = String(2);
   rInput.value = String(initialParams.r);
-  rInput.disabled = true;
 
   const status = document.getElementById("status") as HTMLParagraphElement;
 
