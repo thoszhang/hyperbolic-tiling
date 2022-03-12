@@ -6,7 +6,41 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
     body {
-      font-family: "Lucida Sans Typewriter", "Lucida Console", monaco, "Bitstream Vera Sans Mono", monospace
+      margin: 0;
+      padding: 0;
+      font-family: 'Courier New', Courier, monospace;
+    }
+
+    #controls {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #inputs {
+      display: flex;
+      flex-direction: column;
+      margin: 0.5em;
+    }
+
+    #inputs label {
+      margin-top: 0.5em;
+    }
+
+    #inputs label:first-child {
+      margin-top: 0;
+    }
+
+    #canvas {
+      margin: auto;
+      display: block;
+      width: min(400px, calc(98%));
+      height: auto;
+    }
+
+    #status {
+      text-align: center;
     }
   </style>
   <title>hyperbolic tilings</title>
@@ -15,19 +49,21 @@
 
 <body>
 
-  <label for="input-p">p</label>
-  <input id="input-p" type="number">
-  <br />
-  <label for="input-q">q</label>
-  <input id="input-q" type="number">
-  <br />
-  <label for="input-r">r</label>
-  <input id="input-r" type="number">
-  <br />
-  <button type="button" id="draw-button">draw</button>
-  <br />
+  <div id="controls">
+    <div id="inputs">
+      <label>p
+        <input id="input-p" type="number">
+      </label>
+      <label>q
+        <input id="input-q" type="number">
+      </label>
+      <label>r
+        <input id="input-r" type="number">
+      </label>
+    </div>
+    <button type="button" id="draw-button">draw</button>
+  </div>
   <p id="status"></p>
-  <br />
   <canvas id="canvas"></canvas>
 
 </body>

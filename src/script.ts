@@ -203,8 +203,6 @@ function main(): void {
   const canvas = document.getElementById("canvas") as HTMLCanvasElement;
   canvas.width = CANVAS_SIZE;
   canvas.height = CANVAS_SIZE;
-  canvas.style.width = "400px";
-  canvas.style.height = "400px";
   const canvasCtx = canvas.getContext("2d") as CanvasRenderingContext2D;
 
   const initialParams = { p: 5, q: 5, r: 2 };
