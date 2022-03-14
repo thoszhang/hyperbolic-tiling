@@ -190,13 +190,11 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
 
   const coshC = (cos_c + cos_a * cos_b) / (sin_a * sin_b);
   const coshB = (cos_b + cos_c * cos_a) / (sin_c * sin_a);
+  const C = Math.acosh(coshC);
 
   const halfPlaneC: Mat = id;
   const halfPlaneB: Mat = rotation(Math.PI + a);
-  const halfPlaneA: Mat = mulMat(
-    translation(Math.acosh(coshC)),
-    rotation(Math.PI - b)
-  );
+  const halfPlaneA: Mat = mulMat(translation(C), rotation(Math.PI - b));
 
   const matC: Mat = refl(halfPlaneC);
   const matB: Mat = refl(halfPlaneB);
@@ -229,6 +227,40 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
 
   const inside_qr_pHalfPlane1 = inHalfPlaneFn(qr_pHalfPlane1);
   const inside_qr_pHalfPlane2 = inHalfPlaneFn(qr_pHalfPlane2);
+
+  const pqr_EuclideanDist = (
+    realLineIntxns(
+      mulMat(rotation(-a / 2), mulMat(translation(C), rotation(-b / 2)))
+    ) as [number, number]
+  )[0];
+
+  const pqrHalfPlane1: Mat = mulMat(
+    translation(
+      Math.atanh(
+        Math.cos(a / 2) * 2 * (pqr_EuclideanDist / (1 + pqr_EuclideanDist ** 2))
+      )
+    ),
+    rotation(Math.PI / 2)
+  );
+  const pqrHalfPlane2: Mat = mulMat(
+    refl(rotation(a / 2)),
+    conjMat(pqrHalfPlane1)
+  );
+  const pqrHalfPlane3: Mat = mulMat(
+    mulMat(translation(C), mulMat(refl(rotation(-b / 2)), translation(-C))),
+    conjMat(pqrHalfPlane1)
+  );
+
+  const inside_pqrHalfPlane1 = inHalfPlaneFn(pqrHalfPlane1);
+  const inside_pqrHalfPlane2 = inHalfPlaneFn(pqrHalfPlane2);
+  const inside_pqrHalfPlane3 = inHalfPlaneFn(pqrHalfPlane3);
+
+  const inside_pqrRegion1 = function (p: C2): boolean {
+    return inside_pqrHalfPlane2(p) && !inside_pqrHalfPlane3(p);
+  };
+  const inside_pqrRegion2 = function (p: C2): boolean {
+    return inside_pqrHalfPlane3(p) && !inside_pqrHalfPlane1(p);
+  };
 
   const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
   const data = imgData.data;
@@ -272,8 +304,8 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
       }
 
       const odd = numRefls % 2;
-      const region1 = inside_qr_pHalfPlane1(p) ? 1 : 0;
-      const region2 = inside_qr_pHalfPlane2(p) ? 1 : 0;
+      const region1 = inside_pqrRegion1(p) ? 1 : 0;
+      const region2 = inside_pqrRegion2(p) ? 1 : 0;
       const val = region1 * 128 + region2 * 64 + odd * 32;
 
       data[(cy * CANVAS_SIZE + cx) * 4 + 0] = val;
