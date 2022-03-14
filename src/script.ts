@@ -23,6 +23,13 @@ function translation(dist: number): Mat {
   return fromCol(fromReal(Math.sinh(dist / 2)), fromReal(Math.cosh(dist / 2)));
 }
 
+function translationEuclidean(distE: number): Mat {
+  return fromCol(
+    fromReal(distE * Math.pow((1 + distE) * (1 - distE), 0.5)),
+    fromReal(Math.pow((1 + distE) * (1 - distE), 0.5))
+  );
+}
+
 function invDet1(m: Mat): Mat {
   return [m[3], neg(m[1]), neg(m[2]), m[0]];
 }
@@ -114,6 +121,47 @@ function applyAntiMoebius(m: Mat, p: C2): C2 {
   ];
 }
 
+function quadraticRoots(
+  a: number,
+  b: number,
+  c: number
+): [number, number] | undefined {
+  if (a === 0) {
+    return [-b / c, -b / c];
+  }
+  const d = b * b - 4 * a * c;
+  if (d < 0) {
+    return undefined;
+  }
+  const sqrtD = Math.sqrt(d);
+  if (b >= 0) {
+    return [(-b - sqrtD) / (2 * a), (2 * c) / (-b - sqrtD)];
+  } else {
+    return [(2 * c) / (-b + sqrtD), (-b + sqrtD) / (2 * a)];
+  }
+}
+
+function realLineIntxns(line: Mat): [number, number] | undefined {
+  const v = line[1];
+  const w = line[3];
+  const roots = quadraticRoots(
+    -v.re * w.im + v.im * w.re,
+    2 * (v.re * v.im - w.re * w.im),
+    -v.re * w.im + v.im * w.re
+  );
+  if (!roots) {
+    return undefined;
+  }
+  const intersections = roots.map((r) =>
+    Math.sqrt(modSq(dehomogenize(apply(line, homogenize(fromReal(r))))))
+  );
+  if (intersections[1] > intersections[0]) {
+    return [intersections[0], intersections[1]];
+  } else {
+    return [intersections[1], intersections[0]];
+  }
+}
+
 function homogenize(z: C): C2 {
   return [z, one];
 }
@@ -165,6 +213,23 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
 
   const inside_q_prHalfPlane = inHalfPlaneFn(q_prHalfPlane);
 
+  const qr_pEuclideanDist = (
+    realLineIntxns(mulMat(rotation(-a / 2), halfPlaneA)) as [number, number]
+  )[0];
+
+  const qr_pHalfPlane1: Mat = mulMat(
+    translation(
+      Math.atanh(
+        Math.cos(a / 2) * 2 * (qr_pEuclideanDist / (1 + qr_pEuclideanDist ** 2))
+      )
+    ),
+    rotation(Math.PI / 2)
+  );
+  const qr_pHalfPlane2: Mat = mulMat(refl(rotation(a / 2)), qr_pHalfPlane1);
+
+  const inside_qr_pHalfPlane1 = inHalfPlaneFn(qr_pHalfPlane1);
+  const inside_qr_pHalfPlane2 = inHalfPlaneFn(qr_pHalfPlane2);
+
   const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
   const data = imgData.data;
 
@@ -207,8 +272,9 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
       }
 
       const odd = numRefls % 2;
-      const region = inside_q_prHalfPlane(p) ? 1 : 0;
-      const val = region * 128 + odd * 32;
+      const region1 = inside_qr_pHalfPlane1(p) ? 1 : 0;
+      const region2 = inside_qr_pHalfPlane2(p) ? 1 : 0;
+      const val = region1 * 128 + region2 * 64 + odd * 32;
 
       data[(cy * CANVAS_SIZE + cx) * 4 + 0] = val;
       data[(cy * CANVAS_SIZE + cx) * 4 + 1] = val;
