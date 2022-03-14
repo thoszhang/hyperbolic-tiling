@@ -176,7 +176,7 @@ function complex(c: CanvasCoord): C {
 }
 
 type Params = { p: number; q: number; r: number };
-type Mode = "triangles" | "q|pr" | "qr|p" | "pqr|";
+type Mode = "triangles" | "r|pq" | "rp|q" | "pqr|";
 
 function draw(
   canvasCtx: CanvasRenderingContext2D,
@@ -210,7 +210,7 @@ function draw(
   const insideB = inHalfPlaneFn(halfPlaneB);
   const insideA = inHalfPlaneFn(halfPlaneA);
 
-  function q_pr(): (p: C2) => 0 | 1 {
+  function r_pq(): (p: C2) => 0 | 1 {
     const halfPlane: Mat = mulMat(
       translation(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
       rotation(Math.PI / 2)
@@ -222,7 +222,7 @@ function draw(
     };
   }
 
-  function qr_p(): (p: C2) => 0 | 1 | 2 {
+  function rp_q(): (p: C2) => 0 | 1 | 2 {
     const euclDistToPoint = (
       realLineIntxns(mulMat(rotation(-a / 2), halfPlaneA)) as [number, number]
     )[0];
@@ -292,11 +292,11 @@ function draw(
     case "triangles":
       drawFn = () => 0;
       break;
-    case "q|pr":
-      drawFn = q_pr();
+    case "r|pq":
+      drawFn = r_pq();
       break;
-    case "qr|p":
-      drawFn = qr_p();
+    case "rp|q":
+      drawFn = rp_q();
       break;
     case "pqr|":
       drawFn = pqr_();
@@ -392,8 +392,8 @@ function main(): void {
   modeSelect.appendChild(
     new Option("fundamental triangles", "triangles", true)
   );
-  modeSelect.appendChild(new Option("q | p r", "q|pr"));
-  modeSelect.appendChild(new Option("q r | p", "qr|p"));
+  modeSelect.appendChild(new Option("r | p q", "r|pq"));
+  modeSelect.appendChild(new Option("r p | q", "rp|q"));
   modeSelect.appendChild(new Option("p q r |", "pqr|"));
 
   const showTrianglesCheck = document.getElementById(
