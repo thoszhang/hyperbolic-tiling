@@ -129,7 +129,7 @@ function complex(c: CanvasCoord): C {
 
 type Params = { p: number; q: number; r: number };
 
-function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
+function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
   const a = Math.PI / params.p;
   const b = Math.PI / params.q;
   const c = Math.PI / params.r;
@@ -168,6 +168,8 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
   const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
   const data = imgData.data;
 
+  let reachedIterationLimit = false;
+
   for (let cy = 0; cy < CANVAS_SIZE; cy++) {
     for (let cx = 0; cx < CANVAS_SIZE; cx++) {
       const z = complex({ cx: cx, cy: cy });
@@ -181,7 +183,7 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
       let insC = insideC(p);
       let numRefls = 0;
 
-      while (!insA || !insB || !insC) {
+      while ((!insA || !insB || !insC) && numRefls < 50) {
         if (!insA) {
           p = applyAntiMoebius(matA, p);
         } else if (!insB) {
@@ -193,6 +195,15 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
         insB = insideB(p);
         insC = insideC(p);
         numRefls += 1;
+      }
+
+      if (!insA || !insB || !insC) {
+        data[(cy * CANVAS_SIZE + cx) * 4 + 0] = 255;
+        data[(cy * CANVAS_SIZE + cx) * 4 + 1] = 0;
+        data[(cy * CANVAS_SIZE + cx) * 4 + 2] = 0;
+        data[(cy * CANVAS_SIZE + cx) * 4 + 3] = 255;
+        reachedIterationLimit = true;
+        continue;
       }
 
       const odd = numRefls % 2;
@@ -207,7 +218,7 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): void {
   }
 
   canvasCtx.putImageData(imgData, 0, 0);
-  return;
+  return reachedIterationLimit;
 }
 
 function main(): void {
@@ -246,7 +257,10 @@ function main(): void {
       return;
     }
     status.textContent = "";
-    draw(canvasCtx, { p: p, q: q, r: r });
+    const reachedIterationLimit = draw(canvasCtx, { p: p, q: q, r: r });
+    if (reachedIterationLimit) {
+      status.textContent = `some pixels reached iteration limit, probably due to bug`;
+    }
   });
 
   draw(canvasCtx, initialParams);
