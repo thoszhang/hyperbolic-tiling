@@ -176,8 +176,14 @@ function complex(c: CanvasCoord): C {
 }
 
 type Params = { p: number; q: number; r: number };
+type Mode = "triangles" | "q|pr" | "qr|p" | "pqr|";
 
-function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
+function draw(
+  canvasCtx: CanvasRenderingContext2D,
+  params: Params,
+  mode: Mode,
+  showTriangles: boolean
+): boolean {
   const a = Math.PI / params.p;
   const b = Math.PI / params.q;
   const c = Math.PI / params.r;
@@ -204,63 +210,98 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
   const insideB = inHalfPlaneFn(halfPlaneB);
   const insideA = inHalfPlaneFn(halfPlaneA);
 
-  const q_prHalfPlane: Mat = mulMat(
-    translation(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
-    rotation(Math.PI / 2)
-  );
+  function q_pr(): (p: C2) => 0 | 1 {
+    const halfPlane: Mat = mulMat(
+      translation(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
+      rotation(Math.PI / 2)
+    );
+    const insideHalfPlane = inHalfPlaneFn(halfPlane);
 
-  const inside_q_prHalfPlane = inHalfPlaneFn(q_prHalfPlane);
+    return function (p: C2) {
+      return insideHalfPlane(p) ? 0 : 1;
+    };
+  }
 
-  const qr_pEuclideanDist = (
-    realLineIntxns(mulMat(rotation(-a / 2), halfPlaneA)) as [number, number]
-  )[0];
+  function qr_p(): (p: C2) => 0 | 1 | 2 {
+    const euclDistToPoint = (
+      realLineIntxns(mulMat(rotation(-a / 2), halfPlaneA)) as [number, number]
+    )[0];
 
-  const qr_pHalfPlane1: Mat = mulMat(
-    translation(
-      Math.atanh(
-        Math.cos(a / 2) * 2 * (qr_pEuclideanDist / (1 + qr_pEuclideanDist ** 2))
-      )
-    ),
-    rotation(Math.PI / 2)
-  );
-  const qr_pHalfPlane2: Mat = mulMat(refl(rotation(a / 2)), qr_pHalfPlane1);
+    const halfPlane1: Mat = mulMat(
+      translation(
+        Math.atanh(
+          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
+        )
+      ),
+      rotation(Math.PI / 2)
+    );
+    const halfPlane2: Mat = mulMat(refl(rotation(a / 2)), halfPlane1);
 
-  const inside_qr_pHalfPlane1 = inHalfPlaneFn(qr_pHalfPlane1);
-  const inside_qr_pHalfPlane2 = inHalfPlaneFn(qr_pHalfPlane2);
+    const insideHalfPlane1 = inHalfPlaneFn(halfPlane1);
+    const insideHalfPlane2 = inHalfPlaneFn(halfPlane2);
 
-  const pqr_EuclideanDist = (
-    realLineIntxns(
-      mulMat(rotation(-a / 2), mulMat(translation(C), rotation(-b / 2)))
-    ) as [number, number]
-  )[0];
+    return function (p: C2): 0 | 1 | 2 {
+      if (!insideHalfPlane1(p)) {
+        return 1;
+      } else if (!insideHalfPlane2(p)) {
+        return 2;
+      } else {
+        return 0;
+      }
+    };
+  }
 
-  const pqrHalfPlane1: Mat = mulMat(
-    translation(
-      Math.atanh(
-        Math.cos(a / 2) * 2 * (pqr_EuclideanDist / (1 + pqr_EuclideanDist ** 2))
-      )
-    ),
-    rotation(Math.PI / 2)
-  );
-  const pqrHalfPlane2: Mat = mulMat(
-    refl(rotation(a / 2)),
-    conjMat(pqrHalfPlane1)
-  );
-  const pqrHalfPlane3: Mat = mulMat(
-    mulMat(translation(C), mulMat(refl(rotation(-b / 2)), translation(-C))),
-    conjMat(pqrHalfPlane1)
-  );
+  function pqr_(): (p: C2) => 0 | 1 | 2 {
+    const euclDistToPoint = (
+      realLineIntxns(
+        mulMat(rotation(-a / 2), mulMat(translation(C), rotation(-b / 2)))
+      ) as [number, number]
+    )[0];
 
-  const inside_pqrHalfPlane1 = inHalfPlaneFn(pqrHalfPlane1);
-  const inside_pqrHalfPlane2 = inHalfPlaneFn(pqrHalfPlane2);
-  const inside_pqrHalfPlane3 = inHalfPlaneFn(pqrHalfPlane3);
+    const halfPlane1: Mat = mulMat(
+      translation(
+        Math.atanh(
+          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
+        )
+      ),
+      rotation(Math.PI / 2)
+    );
+    const halfPlane2: Mat = mulMat(refl(rotation(a / 2)), conjMat(halfPlane1));
+    const halfPlane3: Mat = mulMat(
+      mulMat(translation(C), mulMat(refl(rotation(-b / 2)), translation(-C))),
+      conjMat(halfPlane1)
+    );
 
-  const inside_pqrRegion1 = function (p: C2): boolean {
-    return inside_pqrHalfPlane2(p) && !inside_pqrHalfPlane3(p);
-  };
-  const inside_pqrRegion2 = function (p: C2): boolean {
-    return inside_pqrHalfPlane3(p) && !inside_pqrHalfPlane1(p);
-  };
+    const insideHalfPlane1 = inHalfPlaneFn(halfPlane1);
+    const insideHalfPlane2 = inHalfPlaneFn(halfPlane2);
+    const insideHalfPlane3 = inHalfPlaneFn(halfPlane3);
+
+    return function (p: C2): 0 | 1 | 2 {
+      if (insideHalfPlane2(p) && !insideHalfPlane3(p)) {
+        return 1;
+      } else if (insideHalfPlane3(p) && !insideHalfPlane1(p)) {
+        return 2;
+      } else {
+        return 0;
+      }
+    };
+  }
+
+  let drawFn: (p: C2) => 0 | 1 | 2;
+  switch (mode) {
+    case "triangles":
+      drawFn = () => 0;
+      break;
+    case "q|pr":
+      drawFn = q_pr();
+      break;
+    case "qr|p":
+      drawFn = qr_p();
+      break;
+    case "pqr|":
+      drawFn = pqr_();
+      break;
+  }
 
   const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
   const data = imgData.data;
@@ -303,10 +344,16 @@ function draw(canvasCtx: CanvasRenderingContext2D, params: Params): boolean {
         continue;
       }
 
-      const odd = numRefls % 2;
-      const region1 = inside_pqrRegion1(p) ? 1 : 0;
-      const region2 = inside_pqrRegion2(p) ? 1 : 0;
-      const val = region1 * 128 + region2 * 64 + odd * 32;
+      const triangleRegion = numRefls % 2;
+      let val: number;
+      if (mode === "triangles") {
+        val = 255 * triangleRegion;
+      } else {
+        val = 64 * (1 + drawFn(p));
+        if (showTriangles) {
+          val += 16 * (2 * triangleRegion - 1);
+        }
+      }
 
       data[(cy * CANVAS_SIZE + cx) * 4 + 0] = val;
       data[(cy * CANVAS_SIZE + cx) * 4 + 1] = val;
@@ -325,7 +372,7 @@ function main(): void {
   canvas.height = CANVAS_SIZE;
   const canvasCtx = canvas.getContext("2d") as CanvasRenderingContext2D;
 
-  const initialParams = { p: 5, q: 5, r: 2 };
+  const initialParams = { p: 4, q: 3, r: 3 };
 
   const pInput = document.getElementById("input-p") as HTMLInputElement;
   pInput.min = String(2);
@@ -339,6 +386,21 @@ function main(): void {
   rInput.min = String(2);
   rInput.value = String(initialParams.r);
 
+  const modeSelect = document.getElementById(
+    "select-mode"
+  ) as HTMLSelectElement;
+  modeSelect.appendChild(
+    new Option("fundamental triangles", "triangles", true)
+  );
+  modeSelect.appendChild(new Option("q | p r", "q|pr"));
+  modeSelect.appendChild(new Option("q r | p", "qr|p"));
+  modeSelect.appendChild(new Option("p q r |", "pqr|"));
+
+  const showTrianglesCheck = document.getElementById(
+    "check-show-triangles"
+  ) as HTMLInputElement;
+  showTrianglesCheck.checked = true;
+
   const status = document.getElementById("status") as HTMLParagraphElement;
 
   const drawButton = document.getElementById(
@@ -348,6 +410,8 @@ function main(): void {
     const p = parseInt(pInput.value);
     const q = parseInt(qInput.value);
     const r = parseInt(rInput.value);
+    const mode = modeSelect.value as Mode;
+    const showTriangles = showTrianglesCheck.checked;
 
     if (q * r + p * r + p * q >= p * q * r) {
       status.textContent = `(${p} ${q} ${r}) does not satisfy 1/p + 1/q + 1/r < 1`;
@@ -355,13 +419,20 @@ function main(): void {
       return;
     }
     status.textContent = "";
-    const reachedIterationLimit = draw(canvasCtx, { p: p, q: q, r: r });
+    const reachedIterationLimit = draw(
+      canvasCtx,
+      { p: p, q: q, r: r },
+      mode,
+      showTriangles
+    );
     if (reachedIterationLimit) {
-      status.textContent = `some pixels reached iteration limit, probably due to bug`;
+      console.warn(
+        "some pixels reached iteration limit due to numerical stability bugs"
+      );
     }
   });
 
-  draw(canvasCtx, initialParams);
+  draw(canvasCtx, initialParams, "triangles", true);
 }
 
 main();
