@@ -1,4 +1,4 @@
-const RADIUS = 1600;
+const RADIUS = 800;
 const CANVAS_SIZE = 2 * RADIUS;
 
 type C = { readonly re: number; readonly im: number };
