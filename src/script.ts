@@ -1,7 +1,5 @@
-const RADIUS = 400;
+const RADIUS = 1600;
 const CANVAS_SIZE = 2 * RADIUS;
-
-type CanvasCoord = { cx: number; cy: number };
 
 type C = { readonly re: number; readonly im: number };
 type C2 = readonly [C, C]; // Element of C^2, or CP^1.
@@ -21,13 +19,6 @@ function rotation(angle: number): Mat {
 
 function translation(dist: number): Mat {
   return fromCol(fromReal(Math.sinh(dist / 2)), fromReal(Math.cosh(dist / 2)));
-}
-
-function translationEuclidean(distE: number): Mat {
-  return fromCol(
-    fromReal(distE * Math.pow((1 + distE) * (1 - distE), 0.5)),
-    fromReal(Math.pow((1 + distE) * (1 - distE), 0.5))
-  );
 }
 
 function invDet1(m: Mat): Mat {
@@ -78,16 +69,8 @@ function modSq(z: C): number {
   return z.re ** 2 + z.im ** 2;
 }
 
-function arg(z: C): number {
-  return Math.atan2(z.im, z.re);
-}
-
 function add(z1: C, z2: C): C {
   return { re: z1.re + z2.re, im: z1.im + z2.im };
-}
-
-function sub(z1: C, z2: C): C {
-  return { re: z1.re - z2.re, im: z1.im - z2.im };
 }
 
 function realMul(a: number, z: C): C {
@@ -109,15 +92,6 @@ function apply(m: Mat, p: C2): C2 {
   return [
     add(mul(m[0], p[0]), mul(m[1], p[1])),
     add(mul(m[2], p[0]), mul(m[3], p[1])),
-  ];
-}
-
-function applyAntiMoebius(m: Mat, p: C2): C2 {
-  const conjP0 = conj(p[0]);
-  const conjP1 = conj(p[1]);
-  return [
-    add(mul(m[0], conjP0), mul(m[1], conjP1)),
-    add(mul(m[2], conjP0), mul(m[3], conjP1)),
   ];
 }
 
@@ -170,20 +144,19 @@ function dehomogenize(p: C2): C {
   return div(p[0], p[1]);
 }
 
-// Each pixel corresponds to its midpoint.
-function complex(c: CanvasCoord): C {
-  return { re: (c.cx + 0.5) / RADIUS - 1, im: 1 - (c.cy + 0.5) / RADIUS };
-}
-
 type Params = { p: number; q: number; r: number };
 type Mode = "triangles" | "r|pq" | "rp|q" | "pqr|";
 
-function draw(
-  canvasCtx: CanvasRenderingContext2D,
-  params: Params,
-  mode: Mode,
-  showTriangles: boolean
-): boolean {
+type DrawData = {
+  matA: Mat;
+  matB: Mat;
+  matC: Mat;
+  invHalfPlA: Mat;
+  invHalfPlB: Mat;
+  invHalfPlC: Mat;
+};
+
+function draw(params: Params, mode: Mode): DrawData {
   const a = Math.PI / params.p;
   const b = Math.PI / params.q;
   const c = Math.PI / params.r;
@@ -205,10 +178,6 @@ function draw(
   const matC: Mat = refl(halfPlaneC);
   const matB: Mat = refl(halfPlaneB);
   const matA: Mat = refl(halfPlaneA);
-
-  const insideC = inHalfPlaneFn(halfPlaneC);
-  const insideB = inHalfPlaneFn(halfPlaneB);
-  const insideA = inHalfPlaneFn(halfPlaneA);
 
   function r_pq(): (p: C2) => 0 | 1 {
     const halfPlane: Mat = mulMat(
@@ -303,74 +272,248 @@ function draw(
       break;
   }
 
-  const imgData = new ImageData(CANVAS_SIZE, CANVAS_SIZE);
-  const data = imgData.data;
+  return {
+    matA: matA,
+    matB: matB,
+    matC: matC,
+    invHalfPlA: invDet1(halfPlaneA),
+    invHalfPlB: invDet1(halfPlaneB),
+    invHalfPlC: invDet1(halfPlaneC),
+  };
+}
 
-  let reachedIterationLimit = false;
+const vsSource = /* glsl */ `#version 300 es
+#pragma vscode_glsllint_stage : vert
 
-  for (let cy = 0; cy < CANVAS_SIZE; cy++) {
-    for (let cx = 0; cx < CANVAS_SIZE; cx++) {
-      const z = complex({ cx: cx, cy: cy });
-      if (z.re ** 2 + z.im ** 2 > 1) {
-        continue;
-      }
+in vec4 a_position;
 
-      let p: C2 = homogenize(z);
-      let insA = insideA(p);
-      let insB = insideB(p);
-      let insC = insideC(p);
-      let numRefls = 0;
+void main() {
+  gl_Position = a_position;
+}
+`;
 
-      while ((!insA || !insB || !insC) && numRefls < 50) {
-        if (!insA) {
-          p = applyAntiMoebius(matA, p);
-        } else if (!insB) {
-          p = applyAntiMoebius(matB, p);
-        } else {
-          p = applyAntiMoebius(matC, p);
-        }
-        insA = insideA(p);
-        insB = insideB(p);
-        insC = insideC(p);
-        numRefls += 1;
-      }
+const fsSource = /* glsl */ `#version 300 es
+#pragma vscode_glsllint_stage : frag
 
-      if (!insA || !insB || !insC) {
-        data[(cy * CANVAS_SIZE + cx) * 4 + 0] = 255;
-        data[(cy * CANVAS_SIZE + cx) * 4 + 1] = 0;
-        data[(cy * CANVAS_SIZE + cx) * 4 + 2] = 0;
-        data[(cy * CANVAS_SIZE + cx) * 4 + 3] = 255;
-        reachedIterationLimit = true;
-        continue;
-      }
+precision highp float;
 
-      const triangleRegion = numRefls % 2;
-      let val: number;
-      if (mode === "triangles") {
-        val = 255 * triangleRegion;
-      } else {
-        val = 64 * (1 + drawFn(p));
-        if (showTriangles) {
-          val += 16 * (2 * triangleRegion - 1);
-        }
-      }
+uniform vec2 u_resolution;
+uniform mat4 u_matA;
+uniform mat4 u_matB;
+uniform mat4 u_matC;
+uniform mat4 u_invHalfPlA;
+uniform mat4 u_invHalfPlB;
+uniform mat4 u_invHalfPlC;
 
-      data[(cy * CANVAS_SIZE + cx) * 4 + 0] = val;
-      data[(cy * CANVAS_SIZE + cx) * 4 + 1] = val;
-      data[(cy * CANVAS_SIZE + cx) * 4 + 2] = val;
-      data[(cy * CANVAS_SIZE + cx) * 4 + 3] = 255;
-    }
+out vec4 outputColor;
+
+mat2 complex(in float re, in float im) {
+  return mat2(re, im, -im, re);
+}
+
+mat2x4 homogenize(mat2 z) {
+  return mat2x4(z[0], 1.0, 0.0, z[1], 0.0, 1.0);
+}
+
+mat2 dehomogenize(mat2x4 p) {
+  return mat2(p[0].xy, p[1].xy) * inverse(mat2(p[0].zw, p[1].zw));
+}
+
+mat2x4 conj(mat2x4 p) {
+  return mat2x4(
+    p[0].x, p[1].x, p[0].z, p[1].z,
+    p[0].y, p[1].y, p[0].w, p[1].w
+  );
+}
+
+bool inHalfPlane(mat4 invPlane, mat2x4 p) {
+  return dehomogenize(invPlane * p)[0].y >= 0.0;
+}
+
+bool insideA(mat2x4 p) {
+  return inHalfPlane(u_invHalfPlA, p);
+}
+
+bool insideB(mat2x4 p) {
+  return inHalfPlane(u_invHalfPlB, p);
+}
+
+bool insideC(mat2x4 p) {
+  return inHalfPlane(u_invHalfPlC, p);
+}
+
+void main() {
+  mat2 z = complex(
+    2.0 * gl_FragCoord.x / u_resolution.x - 1.0,
+    1.0 - 2.0 * gl_FragCoord.y / u_resolution.y
+  );
+
+  if (determinant(z) > 1.0) {
+    outputColor = vec4(1, 1, 1, 1);
+    return;
   }
 
-  canvasCtx.putImageData(imgData, 0, 0);
-  return reachedIterationLimit;
+  mat2x4 p = homogenize(z);
+  bool insA = insideA(p);
+  bool insB = insideB(p);
+  bool insC = insideC(p);
+  int numRefls = 0;
+
+  while ((!insA || !insB || !insC) && numRefls < 50) {
+    if (!insA) {
+      p = u_matA * conj(p);
+    } else if (!insB) {
+      p = u_matB * conj(p);
+    } else {
+      p = u_matC * conj(p);
+    }
+    insA = insideA(p);
+    insB = insideB(p);
+    insC = insideC(p);
+    numRefls += 1;
+  }
+
+  if (!insA || !insB || !insC) {
+    outputColor = vec4(1, 1, 1, 1);
+    return;
+  }
+
+  int triangleRegion = numRefls % 2;
+  outputColor = vec4(triangleRegion, 0, 0, 1);
+}
+`;
+
+function initShaderProgram(
+  gl: WebGL2RenderingContext,
+  vsSource: string,
+  fsSource: string
+): WebGLProgram | null {
+  const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+  if (vertexShader === null) {
+    return null;
+  }
+  const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+  if (fragmentShader === null) {
+    return null;
+  }
+
+  const shaderProgram = gl.createProgram();
+  if (shaderProgram === null) {
+    console.error("could not create program");
+    return null;
+  }
+
+  gl.attachShader(shaderProgram, vertexShader);
+  gl.attachShader(shaderProgram, fragmentShader);
+  gl.linkProgram(shaderProgram);
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(shaderProgram));
+    return null;
+  }
+
+  return shaderProgram;
+}
+
+function loadShader(
+  gl: WebGL2RenderingContext,
+  type: number,
+  source: string
+): WebGLShader | null {
+  const shader = gl.createShader(type);
+  if (shader === null) {
+    console.error("could not create shader");
+    return null;
+  }
+
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+
+  return shader;
+}
+
+function matrixRep(m: Mat): number[] {
+  const r: number[] = Array.from({ length: 16 }, () => 0);
+  r[0] = m[0].re;
+  r[1] = m[0].im;
+  r[2] = m[2].re;
+  r[3] = m[2].im;
+  r[4] = -m[0].im;
+  r[5] = m[0].re;
+  r[6] = -m[2].im;
+  r[7] = m[2].re;
+  r[8] = m[1].re;
+  r[9] = m[1].im;
+  r[10] = m[3].re;
+  r[11] = m[3].im;
+  r[12] = -m[1].im;
+  r[13] = m[1].re;
+  r[14] = -m[3].im;
+  r[15] = m[3].re;
+  return r;
 }
 
 function main(): void {
   const canvas = document.getElementById("canvas") as HTMLCanvasElement;
   canvas.width = CANVAS_SIZE;
   canvas.height = CANVAS_SIZE;
-  const canvasCtx = canvas.getContext("2d") as CanvasRenderingContext2D;
+
+  const maybeGl = canvas.getContext("webgl2");
+  if (!maybeGl) {
+    console.error("could not initialize WebGL");
+    return;
+  }
+  const gl: WebGL2RenderingContext = maybeGl;
+  const program = initShaderProgram(gl, vsSource, fsSource);
+  if (!program) {
+    return;
+  }
+
+  const positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+
+  const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+  const matALocation = gl.getUniformLocation(program, "u_matA");
+  const matBLocation = gl.getUniformLocation(program, "u_matB");
+  const matCLocation = gl.getUniformLocation(program, "u_matC");
+  const invHalfPlALocation = gl.getUniformLocation(program, "u_invHalfPlA");
+  const invHalfPlBLocation = gl.getUniformLocation(program, "u_invHalfPlB");
+  const invHalfPlCLocation = gl.getUniformLocation(program, "u_invHalfPlC");
+
+  const positionBuffer = gl.createBuffer();
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.enableVertexAttribArray(positionAttributeLocation);
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+    gl.STATIC_DRAW
+  );
+  gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+  function render(data: DrawData): void {
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    gl.useProgram(program);
+    gl.bindVertexArray(vao);
+
+    gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
+    gl.uniformMatrix4fv(matALocation, false, matrixRep(data.matA));
+    gl.uniformMatrix4fv(matBLocation, false, matrixRep(data.matB));
+    gl.uniformMatrix4fv(matCLocation, false, matrixRep(data.matC));
+    gl.uniformMatrix4fv(invHalfPlALocation, false, matrixRep(data.invHalfPlA));
+    gl.uniformMatrix4fv(invHalfPlBLocation, false, matrixRep(data.invHalfPlB));
+    gl.uniformMatrix4fv(invHalfPlCLocation, false, matrixRep(data.invHalfPlC));
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
 
   const initialParams = { p: 4, q: 3, r: 3 };
 
@@ -415,24 +558,15 @@ function main(): void {
 
     if (q * r + p * r + p * q >= p * q * r) {
       status.textContent = `(${p} ${q} ${r}) does not satisfy 1/p + 1/q + 1/r < 1`;
-      canvasCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
       return;
     }
     status.textContent = "";
-    const reachedIterationLimit = draw(
-      canvasCtx,
-      { p: p, q: q, r: r },
-      mode,
-      showTriangles
-    );
-    if (reachedIterationLimit) {
-      console.warn(
-        "some pixels reached iteration limit due to numerical stability bugs"
-      );
-    }
+    const data = draw({ p: p, q: q, r: r }, mode);
+    render(data);
   });
 
-  draw(canvasCtx, initialParams, "triangles", true);
+  const data = draw(initialParams, "triangles");
+  render(data);
 }
 
 main();
