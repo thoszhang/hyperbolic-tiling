@@ -29,13 +29,6 @@ function refl(line: Mat): Mat {
   return mulMat(line, invDet1(conjMat(line)));
 }
 
-function inHalfPlaneFn(plane: Mat): (p: C2) => boolean {
-  const invPlane = invDet1(plane);
-  return function (p: C2): boolean {
-    return dehomogenize(apply(invPlane, p)).im >= 0;
-  };
-}
-
 function conjMat(m: Mat): Mat {
   return [conj(m[0]), conj(m[1]), conj(m[2]), conj(m[3])];
 }
@@ -147,6 +140,19 @@ function dehomogenize(p: C2): C {
 type Params = { p: number; q: number; r: number };
 type Mode = "triangles" | "r|pq" | "rp|q" | "pqr|";
 
+function modeIndex(m: Mode) {
+  switch (m) {
+    case "triangles":
+      return 0;
+    case "r|pq":
+      return 1;
+    case "rp|q":
+      return 2;
+    case "pqr|":
+      return 3;
+  }
+}
+
 type DrawData = {
   matA: Mat;
   matB: Mat;
@@ -154,9 +160,22 @@ type DrawData = {
   invHalfPlA: Mat;
   invHalfPlB: Mat;
   invHalfPlC: Mat;
+  t: undefined | r_pqData | rp_qData | pqr_Data;
+};
+type r_pqData = {
+  invHalfPl1: Mat;
+};
+type rp_qData = {
+  invHalfPl1: Mat;
+  invHalfPl2: Mat;
+};
+type pqr_Data = {
+  invHalfPl1: Mat;
+  invHalfPl2: Mat;
+  invHalfPl3: Mat;
 };
 
-function draw(params: Params, mode: Mode): DrawData {
+function calculateData(params: Params, mode: Mode): DrawData {
   const a = Math.PI / params.p;
   const b = Math.PI / params.q;
   const c = Math.PI / params.r;
@@ -179,19 +198,17 @@ function draw(params: Params, mode: Mode): DrawData {
   const matB: Mat = refl(halfPlaneB);
   const matA: Mat = refl(halfPlaneA);
 
-  function r_pq(): (p: C2) => 0 | 1 {
+  function r_pq(): r_pqData {
     const halfPlane: Mat = mulMat(
       translation(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
       rotation(Math.PI / 2)
     );
-    const insideHalfPlane = inHalfPlaneFn(halfPlane);
-
-    return function (p: C2) {
-      return insideHalfPlane(p) ? 0 : 1;
+    return {
+      invHalfPl1: invDet1(halfPlane),
     };
   }
 
-  function rp_q(): (p: C2) => 0 | 1 | 2 {
+  function rp_q(): rp_qData {
     const euclDistToPoint = (
       realLineIntxns(mulMat(rotation(-a / 2), halfPlaneA)) as [number, number]
     )[0];
@@ -206,21 +223,13 @@ function draw(params: Params, mode: Mode): DrawData {
     );
     const halfPlane2: Mat = mulMat(refl(rotation(a / 2)), halfPlane1);
 
-    const insideHalfPlane1 = inHalfPlaneFn(halfPlane1);
-    const insideHalfPlane2 = inHalfPlaneFn(halfPlane2);
-
-    return function (p: C2): 0 | 1 | 2 {
-      if (!insideHalfPlane1(p)) {
-        return 1;
-      } else if (!insideHalfPlane2(p)) {
-        return 2;
-      } else {
-        return 0;
-      }
+    return {
+      invHalfPl1: invDet1(halfPlane1),
+      invHalfPl2: invDet1(halfPlane2),
     };
   }
 
-  function pqr_(): (p: C2) => 0 | 1 | 2 {
+  function pqr_(): pqr_Data {
     const euclDistToPoint = (
       realLineIntxns(
         mulMat(rotation(-a / 2), mulMat(translation(C), rotation(-b / 2)))
@@ -241,34 +250,26 @@ function draw(params: Params, mode: Mode): DrawData {
       conjMat(halfPlane1)
     );
 
-    const insideHalfPlane1 = inHalfPlaneFn(halfPlane1);
-    const insideHalfPlane2 = inHalfPlaneFn(halfPlane2);
-    const insideHalfPlane3 = inHalfPlaneFn(halfPlane3);
-
-    return function (p: C2): 0 | 1 | 2 {
-      if (insideHalfPlane2(p) && !insideHalfPlane3(p)) {
-        return 1;
-      } else if (insideHalfPlane3(p) && !insideHalfPlane1(p)) {
-        return 2;
-      } else {
-        return 0;
-      }
+    return {
+      invHalfPl1: invDet1(halfPlane1),
+      invHalfPl2: invDet1(halfPlane2),
+      invHalfPl3: invDet1(halfPlane3),
     };
   }
 
-  let drawFn: (p: C2) => 0 | 1 | 2;
+  let tilingData: undefined | r_pqData | rp_qData | pqr_Data;
   switch (mode) {
     case "triangles":
-      drawFn = () => 0;
+      tilingData = undefined;
       break;
     case "r|pq":
-      drawFn = r_pq();
+      tilingData = r_pq();
       break;
     case "rp|q":
-      drawFn = rp_q();
+      tilingData = rp_q();
       break;
     case "pqr|":
-      drawFn = pqr_();
+      tilingData = pqr_();
       break;
   }
 
@@ -279,7 +280,29 @@ function draw(params: Params, mode: Mode): DrawData {
     invHalfPlA: invDet1(halfPlaneA),
     invHalfPlB: invDet1(halfPlaneB),
     invHalfPlC: invDet1(halfPlaneC),
+    t: tilingData,
   };
+}
+
+function mat4(m: Mat): number[] {
+  const r: number[] = Array.from({ length: 16 }, () => 0);
+  r[0] = m[0].re;
+  r[1] = m[0].im;
+  r[2] = m[2].re;
+  r[3] = m[2].im;
+  r[4] = -m[0].im;
+  r[5] = m[0].re;
+  r[6] = -m[2].im;
+  r[7] = m[2].re;
+  r[8] = m[1].re;
+  r[9] = m[1].im;
+  r[10] = m[3].re;
+  r[11] = m[3].im;
+  r[12] = -m[1].im;
+  r[13] = m[1].re;
+  r[14] = -m[3].im;
+  r[15] = m[3].re;
+  return r;
 }
 
 const vsSource = /* glsl */ `#version 300 es
@@ -304,10 +327,15 @@ uniform mat4 u_matC;
 uniform mat4 u_invHalfPlA;
 uniform mat4 u_invHalfPlB;
 uniform mat4 u_invHalfPlC;
+uniform mat4 u_invHalfPl1;
+uniform mat4 u_invHalfPl2;
+uniform mat4 u_invHalfPl3;
+uniform int u_mode;
+uniform int u_showTriangles;
 
 out vec4 outputColor;
 
-mat2 complex(in float re, in float im) {
+mat2 complex(float re, float im) {
   return mat2(re, im, -im, re);
 }
 
@@ -330,16 +358,35 @@ bool inHalfPlane(mat4 invPlane, mat2x4 p) {
   return dehomogenize(invPlane * p)[0].y >= 0.0;
 }
 
-bool insideA(mat2x4 p) {
-  return inHalfPlane(u_invHalfPlA, p);
+int r_pqRegion(mat2x4 p) {
+  if (inHalfPlane(u_invHalfPl1, p)) {
+    return 0;
+  }
+  return 1;
 }
 
-bool insideB(mat2x4 p) {
-  return inHalfPlane(u_invHalfPlB, p);
+int rp_qRegion(mat2x4 p) {
+  if (!inHalfPlane(u_invHalfPl1, p)) {
+    return 1;
+  }
+  if (!inHalfPlane(u_invHalfPl2, p)) {
+    return 2;
+  }
+  return 0;
 }
 
-bool insideC(mat2x4 p) {
-  return inHalfPlane(u_invHalfPlC, p);
+int pqr_Region(mat2x4 p) {
+  bool ins1 = inHalfPlane(u_invHalfPl1, p);
+  bool ins2 = inHalfPlane(u_invHalfPl2, p);
+  bool ins3 = inHalfPlane(u_invHalfPl3, p);
+
+  if (ins2 && !ins3) {
+    return 1;
+  }
+  if (ins3 && !ins1) {
+    return 2;
+  }
+  return 0;
 }
 
 void main() {
@@ -354,9 +401,9 @@ void main() {
   }
 
   mat2x4 p = homogenize(z);
-  bool insA = insideA(p);
-  bool insB = insideB(p);
-  bool insC = insideC(p);
+  bool insA = inHalfPlane(u_invHalfPlA, p);
+  bool insB = inHalfPlane(u_invHalfPlB, p);
+  bool insC = inHalfPlane(u_invHalfPlC, p);
   int numRefls = 0;
 
   while ((!insA || !insB || !insC) && numRefls < 50) {
@@ -367,19 +414,37 @@ void main() {
     } else {
       p = u_matC * conj(p);
     }
-    insA = insideA(p);
-    insB = insideB(p);
-    insC = insideC(p);
+    insA = inHalfPlane(u_invHalfPlA, p);
+    insB = inHalfPlane(u_invHalfPlB, p);
+    insC = inHalfPlane(u_invHalfPlC, p);
     numRefls += 1;
   }
 
   if (!insA || !insB || !insC) {
-    outputColor = vec4(1, 1, 1, 1);
+    outputColor = vec4(.5, 0.5, 0.5, 1);
     return;
   }
 
   int triangleRegion = numRefls % 2;
-  outputColor = vec4(triangleRegion, 0, 0, 1);
+  float val;
+  if (u_mode == 0) {
+    val = float(triangleRegion);
+  } else {
+    int region;
+    if (u_mode == 1) {
+      region = r_pqRegion(p);
+    } else if (u_mode == 2) {
+      region = rp_qRegion(p);
+    } else if (u_mode == 3) {
+      region = pqr_Region(p);
+    }
+    val = (float(region) + 1.0) / 4.0;
+    if (u_showTriangles == 1) {
+      val += (2.0 * float(triangleRegion) - 1.0) / 16.0;
+    }
+  }
+
+  outputColor = vec4(val, val, val, 1);
 }
 `;
 
@@ -436,27 +501,6 @@ function loadShader(
   return shader;
 }
 
-function matrixRep(m: Mat): number[] {
-  const r: number[] = Array.from({ length: 16 }, () => 0);
-  r[0] = m[0].re;
-  r[1] = m[0].im;
-  r[2] = m[2].re;
-  r[3] = m[2].im;
-  r[4] = -m[0].im;
-  r[5] = m[0].re;
-  r[6] = -m[2].im;
-  r[7] = m[2].re;
-  r[8] = m[1].re;
-  r[9] = m[1].im;
-  r[10] = m[3].re;
-  r[11] = m[3].im;
-  r[12] = -m[1].im;
-  r[13] = m[1].re;
-  r[14] = -m[3].im;
-  r[15] = m[3].re;
-  return r;
-}
-
 function main(): void {
   const canvas = document.getElementById("canvas") as HTMLCanvasElement;
   canvas.width = CANVAS_SIZE;
@@ -482,6 +526,14 @@ function main(): void {
   const invHalfPlALocation = gl.getUniformLocation(program, "u_invHalfPlA");
   const invHalfPlBLocation = gl.getUniformLocation(program, "u_invHalfPlB");
   const invHalfPlCLocation = gl.getUniformLocation(program, "u_invHalfPlC");
+  const invHalfPl1Location = gl.getUniformLocation(program, "u_invHalfPl1");
+  const invHalfPl2Location = gl.getUniformLocation(program, "u_invHalfPl2");
+  const invHalfPl3Location = gl.getUniformLocation(program, "u_invHalfPl3");
+  const modeLocation = gl.getUniformLocation(program, "u_mode");
+  const showTrianglesLocation = gl.getUniformLocation(
+    program,
+    "u_showTriangles"
+  );
 
   const positionBuffer = gl.createBuffer();
   const vao = gl.createVertexArray();
@@ -495,7 +547,7 @@ function main(): void {
   );
   gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
 
-  function render(data: DrawData): void {
+  function render(data: DrawData, mode: Mode, showTriangles: boolean): void {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
     gl.clearColor(0, 0, 0, 0);
@@ -505,12 +557,23 @@ function main(): void {
     gl.bindVertexArray(vao);
 
     gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
-    gl.uniformMatrix4fv(matALocation, false, matrixRep(data.matA));
-    gl.uniformMatrix4fv(matBLocation, false, matrixRep(data.matB));
-    gl.uniformMatrix4fv(matCLocation, false, matrixRep(data.matC));
-    gl.uniformMatrix4fv(invHalfPlALocation, false, matrixRep(data.invHalfPlA));
-    gl.uniformMatrix4fv(invHalfPlBLocation, false, matrixRep(data.invHalfPlB));
-    gl.uniformMatrix4fv(invHalfPlCLocation, false, matrixRep(data.invHalfPlC));
+    gl.uniformMatrix4fv(matALocation, false, mat4(data.matA));
+    gl.uniformMatrix4fv(matBLocation, false, mat4(data.matB));
+    gl.uniformMatrix4fv(matCLocation, false, mat4(data.matC));
+    gl.uniformMatrix4fv(invHalfPlALocation, false, mat4(data.invHalfPlA));
+    gl.uniformMatrix4fv(invHalfPlBLocation, false, mat4(data.invHalfPlB));
+    gl.uniformMatrix4fv(invHalfPlCLocation, false, mat4(data.invHalfPlC));
+    if (data.t && "invHalfPl1" in data.t) {
+      gl.uniformMatrix4fv(invHalfPl1Location, false, mat4(data.t.invHalfPl1));
+    }
+    if (data.t && "invHalfPl2" in data.t) {
+      gl.uniformMatrix4fv(invHalfPl2Location, false, mat4(data.t.invHalfPl2));
+    }
+    if (data.t && "invHalfPl3" in data.t) {
+      gl.uniformMatrix4fv(invHalfPl3Location, false, mat4(data.t.invHalfPl3));
+    }
+    gl.uniform1i(modeLocation, modeIndex(mode));
+    gl.uniform1i(showTrianglesLocation, showTriangles ? 1 : 0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
@@ -557,16 +620,19 @@ function main(): void {
     const showTriangles = showTrianglesCheck.checked;
 
     if (q * r + p * r + p * q >= p * q * r) {
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
       status.textContent = `(${p} ${q} ${r}) does not satisfy 1/p + 1/q + 1/r < 1`;
       return;
     }
     status.textContent = "";
-    const data = draw({ p: p, q: q, r: r }, mode);
-    render(data);
+    const data = calculateData({ p: p, q: q, r: r }, mode);
+    render(data, mode, showTriangles);
   });
 
-  const data = draw(initialParams, "triangles");
-  render(data);
+  const data = calculateData(initialParams, "triangles");
+  render(data, "triangles", true);
 }
 
 main();
