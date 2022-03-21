@@ -13,27 +13,16 @@
 
     #controls {
       display: flex;
-      flex-direction: row;
-      justify-content: center;
-    }
-
-    #draw-button {
-      margin-top: 0.5em;
-      margin-bottom: 0.5em;
-    }
-
-    #inputs {
-      display: flex;
       flex-direction: column;
-      align-items: flex-end;
+      align-items: center;
       margin: 0.5em;
     }
 
-    #inputs label {
+    #controls label {
       margin-top: 0.5em;
     }
 
-    #inputs label:first-child {
+    #controls label:first-child {
       margin-top: 0;
     }
 
@@ -55,25 +44,22 @@
 <body>
 
   <div id="controls">
-    <div id="inputs">
-      <label>p
-        <input id="input-p" type="number">
-      </label>
-      <label>q
-        <input id="input-q" type="number">
-      </label>
-      <label>r
-        <input id="input-r" type="number">
-      </label>
-      <label> mode
-        <select id="select-mode">
-        </select>
-      </label>
-      <label>show fundamental triangles
-        <input id="check-show-triangles" type="checkbox">
-      </label>
-    </div>
-    <button type="button" id="draw-button">draw</button>
+    <label>p
+      <input id="input-p" type="number">
+    </label>
+    <label>q
+      <input id="input-q" type="number">
+    </label>
+    <label>r
+      <input id="input-r" type="number">
+    </label>
+    <label> mode
+      <select id="select-mode">
+      </select>
+    </label>
+    <label>show fundamental triangles
+      <input id="check-show-triangles" type="checkbox">
+    </label>
   </div>
   <p id="status"></p>
   <canvas id="canvas"></canvas>

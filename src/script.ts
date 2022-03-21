@@ -609,10 +609,7 @@ function main(): void {
 
   const status = document.getElementById("status") as HTMLParagraphElement;
 
-  const drawButton = document.getElementById(
-    "draw-button"
-  ) as HTMLButtonElement;
-  drawButton.addEventListener("click", () => {
+  function update(): void {
     const p = parseInt(pInput.value);
     const q = parseInt(qInput.value);
     const r = parseInt(rInput.value);
@@ -629,10 +626,15 @@ function main(): void {
     status.textContent = "";
     const data = calculateData({ p: p, q: q, r: r }, mode);
     render(data, mode, showTriangles);
-  });
+  }
 
-  const data = calculateData(initialParams, "triangles");
-  render(data, "triangles", true);
+  pInput.addEventListener("change", update);
+  qInput.addEventListener("change", update);
+  rInput.addEventListener("change", update);
+  modeSelect.addEventListener("change", update);
+  showTrianglesCheck.addEventListener("change", update);
+
+  update();
 }
 
 main();
