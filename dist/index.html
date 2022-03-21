@@ -18,11 +18,11 @@
       margin: 0.5em;
     }
 
-    #controls label {
+    #controls>* {
       margin-top: 0.5em;
     }
 
-    #controls label:first-child {
+    #controls *:first-child {
       margin-top: 0;
     }
 
@@ -44,15 +44,27 @@
 <body>
 
   <div id="controls">
-    <label>p
-      <input id="input-p" type="number">
-    </label>
-    <label>q
-      <input id="input-q" type="number">
-    </label>
-    <label>r
-      <input id="input-r" type="number">
-    </label>
+    <div>
+      <label>p
+        <input id="input-p" type="number">
+      </label>
+      <button id="decrement-p">-</button>
+      <button id="increment-p">+</button>
+    </div>
+    <div>
+      <label>q
+        <input id="input-q" type="number">
+      </label>
+      <button id="decrement-q">-</button>
+      <button id="increment-q">+</button>
+    </div>
+    <div>
+      <label>r
+        <input id="input-r" type="number">
+      </label>
+      <button id="decrement-r">-</button>
+      <button id="increment-r">+</button>
+    </div>
     <label> mode
       <select id="select-mode">
       </select>

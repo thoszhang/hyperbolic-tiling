@@ -580,17 +580,40 @@ function main(): void {
 
   const initialParams = { p: 4, q: 3, r: 3 };
 
-  const pInput = document.getElementById("input-p") as HTMLInputElement;
-  pInput.min = String(2);
-  pInput.value = String(initialParams.p);
+  const angleInputs: { [key: string]: HTMLElement } = {};
+  (["p", "q", "r"] as const).forEach((label) => {
+    const input = document.getElementById(`input-${label}`) as HTMLInputElement;
+    angleInputs[`input-${label}`] = input;
 
-  const qInput = document.getElementById("input-q") as HTMLInputElement;
-  qInput.min = String(2);
-  qInput.value = String(initialParams.q);
+    const inc = document.getElementById(
+      `increment-${label}`
+    ) as HTMLButtonElement;
+    angleInputs[`increment-${label}`] = inc;
 
-  const rInput = document.getElementById("input-r") as HTMLInputElement;
-  rInput.min = String(2);
-  rInput.value = String(initialParams.r);
+    const dec = document.getElementById(
+      `decrement-${label}`
+    ) as HTMLButtonElement;
+    angleInputs[`decrement-${label}`] = dec;
+
+    inc.addEventListener("click", () => {
+      input.value = String(parseInt(input.value) + 1);
+      dec.disabled = parseInt(input.value) <= 2;
+    });
+    dec.addEventListener("click", () => {
+      input.value = String(parseInt(input.value) - 1);
+      dec.disabled = parseInt(input.value) <= 2;
+    });
+    input.addEventListener("change", () => {
+      dec.disabled = parseInt(input.value) <= 2;
+    });
+
+    input.min = String(2);
+    input.value = String(initialParams[label]);
+
+    input.addEventListener("change", update);
+    inc.addEventListener("click", update);
+    dec.addEventListener("click", update);
+  });
 
   const modeSelect = document.getElementById(
     "select-mode"
@@ -610,9 +633,9 @@ function main(): void {
   const status = document.getElementById("status") as HTMLParagraphElement;
 
   function update(): void {
-    const p = parseInt(pInput.value);
-    const q = parseInt(qInput.value);
-    const r = parseInt(rInput.value);
+    const p = parseInt((angleInputs["input-p"] as HTMLInputElement).value);
+    const q = parseInt((angleInputs["input-q"] as HTMLInputElement).value);
+    const r = parseInt((angleInputs["input-r"] as HTMLInputElement).value);
     const mode = modeSelect.value as Mode;
     const showTriangles = showTrianglesCheck.checked;
 
@@ -628,9 +651,6 @@ function main(): void {
     render(data, mode, showTriangles);
   }
 
-  pInput.addEventListener("change", update);
-  qInput.addEventListener("change", update);
-  rInput.addEventListener("change", update);
   modeSelect.addEventListener("change", update);
   showTrianglesCheck.addEventListener("change", update);
 
