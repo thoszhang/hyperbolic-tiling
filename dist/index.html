@@ -26,14 +26,20 @@
       margin-top: 0;
     }
 
-    #canvas {
+    #canvas,
+    #details {
       margin: auto;
       display: block;
       width: min(400px, calc(98%));
       height: auto;
     }
 
-    #status {
+    #details {
+      margin-top: 1em;
+    }
+
+    #status,
+    #details {
       text-align: center;
     }
   </style>
@@ -75,7 +81,15 @@
   </div>
   <p id="status"></p>
   <canvas id="canvas"></canvas>
-
+  <details id="details">
+    <summary>information</summary>
+    These are <a href="https://en.wikipedia.org/wiki/Uniform_tilings_in_hyperbolic_plane">uniform hyperbolic
+      tilings</a>, generated using the <a href="https://en.wikipedia.org/wiki/Wythoff_construction">Wythoff
+      construction</a>. The images are generated using the reverse pixel lookup technique described in <a
+      href="https://nbn-resolving.org/urn/resolver.pl?urn:nbn:de:bvb:91-diss-20140717-1210572-1-6"><cite>Creation of
+        Hyperbolic Ornaments</cite> by Martin von Gagern</a>. <a
+      href="https://github.com/lucy-zhang/hyperbolic-tiling">Source on GitHub.
+  </details>
 </body>
 
 </html>
