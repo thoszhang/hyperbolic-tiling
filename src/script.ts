@@ -33,13 +33,17 @@ function conjMat(m: Mat): Mat {
   return [conj(m[0]), conj(m[1]), conj(m[2]), conj(m[3])];
 }
 
-function mulMat(m1: Mat, m2: Mat): Mat {
+function mulMat2(m1: Mat, m2: Mat): Mat {
   return [
     add(mul(m1[0], m2[0]), mul(m1[1], m2[2])),
     add(mul(m1[0], m2[1]), mul(m1[1], m2[3])),
     add(mul(m1[2], m2[0]), mul(m1[3], m2[2])),
     add(mul(m1[2], m2[1]), mul(m1[3], m2[3])),
   ];
+}
+
+function mulMat(...ms: Mat[]): Mat {
+  return ms.reduce(mulMat2, id);
 }
 
 function fromPolar(mod: number, arg: number): C {
@@ -138,12 +142,14 @@ function dehomogenize(p: C2): C {
 }
 
 type Params = { p: number; q: number; r: number };
-type Mode = "triangles" | "r|pq" | "rp|q" | "pqr|";
+type Mode = "triangles" | "p|qr" | "q|pr" | "r|pq" | "rp|q" | "pqr|";
 
-function modeIndex(m: Mode) {
+function modeIndex(m: Mode): number {
   switch (m) {
     case "triangles":
       return 0;
+    case "p|qr":
+    case "q|pr":
     case "r|pq":
       return 1;
     case "rp|q":
@@ -160,12 +166,12 @@ type DrawData = {
   invHalfPlA: Mat;
   invHalfPlB: Mat;
   invHalfPlC: Mat;
-  t: undefined | r_pqData | rp_qData | pqr_Data;
+  t: undefined | x_yzData | xy_zData | pqr_Data;
 };
-type r_pqData = {
+type x_yzData = {
   invHalfPl1: Mat;
 };
-type rp_qData = {
+type xy_zData = {
   invHalfPl1: Mat;
   invHalfPl2: Mat;
 };
@@ -188,7 +194,10 @@ function calculateData(params: Params, mode: Mode): DrawData {
 
   const coshC = (cos_c + cos_a * cos_b) / (sin_a * sin_b);
   const coshB = (cos_b + cos_c * cos_a) / (sin_c * sin_a);
+  const coshA = (cos_a + cos_b * cos_c) / (sin_b * sin_c);
   const C = Math.acosh(coshC);
+  const B = Math.acosh(coshB);
+  const A = Math.acosh(coshA);
 
   const halfPlaneC: Mat = id;
   const halfPlaneB: Mat = rotation(Math.PI + a);
@@ -198,7 +207,35 @@ function calculateData(params: Params, mode: Mode): DrawData {
   const matB: Mat = refl(halfPlaneB);
   const matA: Mat = refl(halfPlaneA);
 
-  function r_pq(): r_pqData {
+  function p_qr(): x_yzData {
+    const halfPlane: Mat = mulMat(
+      refl(rotation(a / 2)),
+      translation(B),
+      conjMat(refl(rotation(-c / 2))),
+      translation(-A + Math.atanh(cos_b * Math.sqrt(1 - Math.pow(coshC, -2)))),
+      rotation(Math.PI / 2)
+    );
+    return {
+      invHalfPl1: invDet1(halfPlane),
+    };
+  }
+
+  function q_pr(): x_yzData {
+    const halfPlane: Mat = mulMat(
+      translation(C),
+      refl(rotation(-b / 2)),
+      translation(-A),
+      conjMat(refl(rotation(c / 2))),
+
+      translation(Math.atanh(cos_c * Math.sqrt(1 - Math.pow(coshA, -2)))),
+      rotation(Math.PI / 2)
+    );
+    return {
+      invHalfPl1: invDet1(halfPlane),
+    };
+  }
+
+  function r_pq(): x_yzData {
     const halfPlane: Mat = mulMat(
       translation(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
       rotation(Math.PI / 2)
@@ -208,7 +245,7 @@ function calculateData(params: Params, mode: Mode): DrawData {
     };
   }
 
-  function rp_q(): rp_qData {
+  function rp_q(): xy_zData {
     const euclDistToPoint = (
       realLineIntxns(mulMat(rotation(-a / 2), halfPlaneA)) as [number, number]
     )[0];
@@ -232,7 +269,7 @@ function calculateData(params: Params, mode: Mode): DrawData {
   function pqr_(): pqr_Data {
     const euclDistToPoint = (
       realLineIntxns(
-        mulMat(rotation(-a / 2), mulMat(translation(C), rotation(-b / 2)))
+        mulMat(rotation(-a / 2), translation(C), rotation(-b / 2))
       ) as [number, number]
     )[0];
 
@@ -246,7 +283,9 @@ function calculateData(params: Params, mode: Mode): DrawData {
     );
     const halfPlane2: Mat = mulMat(refl(rotation(a / 2)), conjMat(halfPlane1));
     const halfPlane3: Mat = mulMat(
-      mulMat(translation(C), mulMat(refl(rotation(-b / 2)), translation(-C))),
+      translation(C),
+      refl(rotation(-b / 2)),
+      translation(-C),
       conjMat(halfPlane1)
     );
 
@@ -257,10 +296,16 @@ function calculateData(params: Params, mode: Mode): DrawData {
     };
   }
 
-  let tilingData: undefined | r_pqData | rp_qData | pqr_Data;
+  let tilingData: undefined | x_yzData | xy_zData | pqr_Data;
   switch (mode) {
     case "triangles":
       tilingData = undefined;
+      break;
+    case "p|qr":
+      tilingData = p_qr();
+      break;
+    case "q|pr":
+      tilingData = q_pr();
       break;
     case "r|pq":
       tilingData = r_pq();
@@ -358,14 +403,14 @@ bool inHalfPlane(mat4 invPlane, mat2x4 p) {
   return dehomogenize(invPlane * p)[0].y >= 0.0;
 }
 
-int r_pqRegion(mat2x4 p) {
+int x_yzRegion(mat2x4 p) {
   if (inHalfPlane(u_invHalfPl1, p)) {
     return 0;
   }
   return 1;
 }
 
-int rp_qRegion(mat2x4 p) {
+int xy_zRegion(mat2x4 p) {
   if (!inHalfPlane(u_invHalfPl1, p)) {
     return 1;
   }
@@ -432,9 +477,9 @@ void main() {
   } else {
     int region;
     if (u_mode == 1) {
-      region = r_pqRegion(p);
+      region = x_yzRegion(p);
     } else if (u_mode == 2) {
-      region = rp_qRegion(p);
+      region = xy_zRegion(p);
     } else if (u_mode == 3) {
       region = pqr_Region(p);
     }
@@ -621,6 +666,8 @@ function main(): void {
   modeSelect.appendChild(
     new Option("fundamental triangles", "triangles", true)
   );
+  modeSelect.appendChild(new Option("p | q r", "p|qr"));
+  modeSelect.appendChild(new Option("q | p r", "q|pr"));
   modeSelect.appendChild(new Option("r | p q", "r|pq"));
   modeSelect.appendChild(new Option("r p | q", "rp|q"));
   modeSelect.appendChild(new Option("p q r |", "pqr|"));
