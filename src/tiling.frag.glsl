@@ -36,8 +36,12 @@ mat2x4 conj(mat2x4 p) {
   );
 }
 
+float approxDistToHalfPlane(mat4 invPlane, mat2x4 p) {
+  return dehomogenize(invPlane * p)[0].y;
+}
+
 bool inHalfPlane(mat4 invPlane, mat2x4 p) {
-  return dehomogenize(invPlane * p)[0].y >= 0.0;
+  return approxDistToHalfPlane(invPlane, p) >= 0.0;
 }
 
 int x_yzRegion(mat2x4 p) {
@@ -83,27 +87,27 @@ void main() {
   }
 
   mat2x4 p = homogenize(z);
-  bool insA = inHalfPlane(u_invHalfPlA, p);
-  bool insB = inHalfPlane(u_invHalfPlB, p);
-  bool insC = inHalfPlane(u_invHalfPlC, p);
+  float approxDistA = approxDistToHalfPlane(u_invHalfPlA, p);
+  float approxDistB = approxDistToHalfPlane(u_invHalfPlB, p);
+  float approxDistC = approxDistToHalfPlane(u_invHalfPlC, p);
   int numRefls = 0;
 
-  while ((!insA || !insB || !insC) && numRefls < 50) {
-    if (!insA) {
+  while ((approxDistA < 0.0 || approxDistB < 0.0 || approxDistC < 0.0) && numRefls < 50) {
+    if (approxDistA <= approxDistB && approxDistA <= approxDistC) {
       p = u_matA * conj(p);
-    } else if (!insB) {
+    } else if (approxDistB <= approxDistC && approxDistB <= approxDistA) {
       p = u_matB * conj(p);
     } else {
       p = u_matC * conj(p);
     }
-    insA = inHalfPlane(u_invHalfPlA, p);
-    insB = inHalfPlane(u_invHalfPlB, p);
-    insC = inHalfPlane(u_invHalfPlC, p);
+    approxDistA = approxDistToHalfPlane(u_invHalfPlA, p);
+    approxDistB = approxDistToHalfPlane(u_invHalfPlB, p);
+    approxDistC = approxDistToHalfPlane(u_invHalfPlC, p);
     numRefls += 1;
   }
 
-  if (!insA || !insB || !insC) {
-    outputColor = vec4(.5, 0.5, 0.5, 1);
+  if (approxDistA < 0.0 || approxDistB < 0.0 || approxDistC < 0.0) {
+    outputColor = vec4(0.5, 0.5, 0.5, 1);
     return;
   }
 
