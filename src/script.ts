@@ -1,95 +1,85 @@
+import { mat2, mat4, ReadonlyMat4 } from "gl-matrix";
+
 const RADIUS = 800;
 const CANVAS_SIZE = 2 * RADIUS;
 
-type C = { readonly re: number; readonly im: number };
-type C2 = readonly [C, C]; // Element of C^2, or CP^1.
-type Mat = readonly [C, C, C, C]; // Row-major 2x2 matrix.
+type C = mat2;
+type C2 = mat4; // only use the first 2 columns
+type Mat = mat4;
 
 const zero = fromReal(0);
-const one = fromReal(1);
-const id: Mat = fromCol(zero, one);
+const id: Mat = mat4.create();
 
-function fromCol(v: C, w: C): Mat {
-  return [conj(w), v, conj(v), w];
+function toC(re: number, im: number): C {
+  // prettier-ignore
+  return mat2.fromValues(
+    re, im,
+    -im, re
+  );
 }
 
-function rotation(angle: number): Mat {
+function fromCol(v: C, w: C): Mat {
+  // prettier-ignore
+  return mat4.fromValues(
+    w[0], -w[1], v[0], -v[1],
+    -w[2], w[3], -v[2], v[3],
+    v[0], v[1], w[0], w[1],
+    v[2], v[3], w[2], w[3]
+  );
+}
+
+function rot(angle: number): Mat {
   return fromCol(zero, fromPolar(1, -angle / 2));
 }
 
-function translation(dist: number): Mat {
+function transl(dist: number): Mat {
   return fromCol(fromReal(Math.sinh(dist / 2)), fromReal(Math.cosh(dist / 2)));
 }
 
-function invDet1(m: Mat): Mat {
-  return [m[3], neg(m[1]), neg(m[2]), m[0]];
-}
-
 function refl(line: Mat): Mat {
-  return mulMat(line, invDet1(conjMat(line)));
+  const out = mat4.create();
+  conjMat(out, line);
+  mat4.adjoint(out, out);
+  mat4.mul(out, line, out);
+  return out;
 }
 
-function conjMat(m: Mat): Mat {
-  return [conj(m[0]), conj(m[1]), conj(m[2]), conj(m[3])];
+function reflRot(angle: number): Mat {
+  return fromCol(zero, fromPolar(1, -angle));
 }
 
-function mulMat2(m1: Mat, m2: Mat): Mat {
-  return [
-    add(mul(m1[0], m2[0]), mul(m1[1], m2[2])),
-    add(mul(m1[0], m2[1]), mul(m1[1], m2[3])),
-    add(mul(m1[2], m2[0]), mul(m1[3], m2[2])),
-    add(mul(m1[2], m2[1]), mul(m1[3], m2[3])),
-  ];
+function conjReflRot(angle: number): Mat {
+  return fromCol(zero, fromPolar(1, angle));
+}
+
+function conjMat(out: mat4, m: ReadonlyMat4) {
+  if (out !== m) {
+    mat4.copy(out, m);
+  }
+  out[1] = -out[1];
+  out[3] = -out[3];
+  out[4] = -out[4];
+  out[6] = -out[6];
+  out[9] = -out[9];
+  out[11] = -out[11];
+  out[12] = -out[12];
+  out[14] = -out[14];
 }
 
 function mulMat(...ms: Mat[]): Mat {
-  return ms.reduce(mulMat2, id);
+  const result = mat4.create();
+  ms.forEach((m) => {
+    mat4.mul(result, result, m);
+  });
+  return result;
 }
 
 function fromPolar(mod: number, arg: number): C {
-  return { re: mod * Math.cos(arg), im: mod * Math.sin(arg) };
+  return toC(mod * Math.cos(arg), mod * Math.sin(arg));
 }
 
 function fromReal(x: number): C {
-  return { re: x, im: 0 };
-}
-
-function neg(z: C): C {
-  return { re: -z.re, im: -z.im };
-}
-
-function conj(z: C): C {
-  return { re: z.re, im: -z.im };
-}
-
-function modSq(z: C): number {
-  return z.re ** 2 + z.im ** 2;
-}
-
-function add(z1: C, z2: C): C {
-  return { re: z1.re + z2.re, im: z1.im + z2.im };
-}
-
-function realMul(a: number, z: C): C {
-  return { re: a * z.re, im: a * z.im };
-}
-
-function mul(z1: C, z2: C): C {
-  return {
-    re: z1.re * z2.re - z1.im * z2.im,
-    im: z1.im * z2.re + z1.re * z2.im,
-  };
-}
-
-function div(z1: C, z2: C): C {
-  return realMul(1 / modSq(z2), mul(z1, conj(z2)));
-}
-
-function apply(m: Mat, p: C2): C2 {
-  return [
-    add(mul(m[0], p[0]), mul(m[1], p[1])),
-    add(mul(m[2], p[0]), mul(m[3], p[1])),
-  ];
+  return toC(x, 0);
 }
 
 function quadraticRoots(
@@ -113,18 +103,22 @@ function quadraticRoots(
 }
 
 function realLineIntxns(line: Mat): [number, number] | undefined {
-  const v = line[1];
-  const w = line[3];
+  const vRe = line[8];
+  const vIm = line[9];
+  const wRe = line[10];
+  const wIm = line[11];
   const roots = quadraticRoots(
-    -v.re * w.im + v.im * w.re,
-    2 * (v.re * v.im - w.re * w.im),
-    -v.re * w.im + v.im * w.re
+    -vRe * wIm + vIm * wRe,
+    2 * (vRe * vIm - wRe * wIm),
+    -vRe * wIm + vIm * wRe
   );
   if (!roots) {
     return undefined;
   }
   const intersections = roots.map((r) =>
-    Math.sqrt(modSq(dehomogenize(apply(line, homogenize(fromReal(r))))))
+    Math.sqrt(
+      mat2.determinant(dehomogenize(mulMat(line, homogenize(fromReal(r)))))
+    )
   );
   if (intersections[1] > intersections[0]) {
     return [intersections[0], intersections[1]];
@@ -134,11 +128,21 @@ function realLineIntxns(line: Mat): [number, number] | undefined {
 }
 
 function homogenize(z: C): C2 {
-  return [z, one];
+  // prettier-ignore
+  return mat4.fromValues(
+    z[0], z[1], 1, 0,
+    z[2], z[3], 0, 1,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  );
 }
 
 function dehomogenize(p: C2): C {
-  return div(p[0], p[1]);
+  const z1 = mat2.fromValues(p[0], p[1], p[4], p[5]);
+  const z2 = mat2.fromValues(p[2], p[3], p[6], p[7]);
+  mat2.invert(z2, z2);
+  mat2.mul(z2, z1, z2);
+  return z2;
 }
 
 type Params = { p: number; q: number; r: number };
@@ -200,8 +204,8 @@ function calculateData(params: Params, mode: Mode): DrawData {
   const A = Math.acosh(coshA);
 
   const halfPlaneC: Mat = id;
-  const halfPlaneB: Mat = rotation(Math.PI + a);
-  const halfPlaneA: Mat = mulMat(translation(C), rotation(Math.PI - b));
+  const halfPlaneB: Mat = rot(Math.PI + a);
+  const halfPlaneA: Mat = mulMat(transl(C), rot(Math.PI - b));
 
   const matC: Mat = refl(halfPlaneC);
   const matB: Mat = refl(halfPlaneB);
@@ -209,90 +213,104 @@ function calculateData(params: Params, mode: Mode): DrawData {
 
   function p_qr(): x_yzData {
     const halfPlane: Mat = mulMat(
-      refl(rotation(a / 2)),
-      translation(B),
-      conjMat(refl(rotation(-c / 2))),
-      translation(-A + Math.atanh(cos_b * Math.sqrt(1 - Math.pow(coshC, -2)))),
-      rotation(Math.PI / 2)
+      reflRot(a / 2),
+      transl(B),
+      conjReflRot(-c / 2),
+      transl(-A + Math.atanh(cos_b * Math.sqrt(1 - Math.pow(coshC, -2)))),
+      rot(Math.PI / 2)
     );
+
+    mat4.adjoint(halfPlane, halfPlane);
     return {
-      invHalfPl1: invDet1(halfPlane),
+      invHalfPl1: halfPlane,
     };
   }
 
   function q_pr(): x_yzData {
     const halfPlane: Mat = mulMat(
-      translation(C),
-      refl(rotation(-b / 2)),
-      translation(-A),
-      conjMat(refl(rotation(c / 2))),
+      transl(C),
+      reflRot(-b / 2),
+      transl(-A),
+      conjReflRot(c / 2),
 
-      translation(Math.atanh(cos_c * Math.sqrt(1 - Math.pow(coshA, -2)))),
-      rotation(Math.PI / 2)
+      transl(Math.atanh(cos_c * Math.sqrt(1 - Math.pow(coshA, -2)))),
+      rot(Math.PI / 2)
     );
+
+    mat4.adjoint(halfPlane, halfPlane);
     return {
-      invHalfPl1: invDet1(halfPlane),
+      invHalfPl1: halfPlane,
     };
   }
 
   function r_pq(): x_yzData {
     const halfPlane: Mat = mulMat(
-      translation(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
-      rotation(Math.PI / 2)
+      transl(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
+      rot(Math.PI / 2)
     );
+
+    mat4.adjoint(halfPlane, halfPlane);
     return {
-      invHalfPl1: invDet1(halfPlane),
+      invHalfPl1: halfPlane,
     };
   }
 
   function rp_q(): xy_zData {
     const euclDistToPoint = (
-      realLineIntxns(mulMat(rotation(-a / 2), halfPlaneA)) as [number, number]
+      realLineIntxns(mulMat(rot(-a / 2), halfPlaneA)) as [number, number]
     )[0];
 
     const halfPlane1: Mat = mulMat(
-      translation(
+      transl(
         Math.atanh(
           Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
         )
       ),
-      rotation(Math.PI / 2)
+      rot(Math.PI / 2)
     );
-    const halfPlane2: Mat = mulMat(refl(rotation(a / 2)), halfPlane1);
+    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
 
+    mat4.adjoint(halfPlane1, halfPlane1);
+    mat4.adjoint(halfPlane2, halfPlane2);
     return {
-      invHalfPl1: invDet1(halfPlane1),
-      invHalfPl2: invDet1(halfPlane2),
+      invHalfPl1: halfPlane1,
+      invHalfPl2: halfPlane2,
     };
   }
 
   function pqr_(): pqr_Data {
     const euclDistToPoint = (
-      realLineIntxns(
-        mulMat(rotation(-a / 2), translation(C), rotation(-b / 2))
-      ) as [number, number]
+      realLineIntxns(mulMat(rot(-a / 2), transl(C), rot(-b / 2))) as [
+        number,
+        number
+      ]
     )[0];
 
     const halfPlane1: Mat = mulMat(
-      translation(
+      transl(
         Math.atanh(
           Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
         )
       ),
-      rotation(Math.PI / 2)
+      rot(Math.PI / 2)
     );
-    const halfPlane2: Mat = mulMat(refl(rotation(a / 2)), conjMat(halfPlane1));
+    const halfPlane1Conj = mat4.clone(halfPlane1);
+    conjMat(halfPlane1Conj, halfPlane1Conj);
+    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1Conj);
     const halfPlane3: Mat = mulMat(
-      translation(C),
-      refl(rotation(-b / 2)),
-      translation(-C),
-      conjMat(halfPlane1)
+      transl(C),
+      reflRot(-b / 2),
+      transl(-C),
+      halfPlane1Conj
     );
 
+    mat4.adjoint(halfPlane1, halfPlane1);
+    mat4.adjoint(halfPlane2, halfPlane2);
+    mat4.adjoint(halfPlane3, halfPlane3);
     return {
-      invHalfPl1: invDet1(halfPlane1),
-      invHalfPl2: invDet1(halfPlane2),
-      invHalfPl3: invDet1(halfPlane3),
+      invHalfPl1: halfPlane1,
+      invHalfPl2: halfPlane2,
+      invHalfPl3: halfPlane3,
     };
   }
 
@@ -318,36 +336,18 @@ function calculateData(params: Params, mode: Mode): DrawData {
       break;
   }
 
+  mat4.adjoint(halfPlaneA, halfPlaneA);
+  mat4.adjoint(halfPlaneB, halfPlaneB);
+  mat4.adjoint(halfPlaneC, halfPlaneC);
   return {
     matA: matA,
     matB: matB,
     matC: matC,
-    invHalfPlA: invDet1(halfPlaneA),
-    invHalfPlB: invDet1(halfPlaneB),
-    invHalfPlC: invDet1(halfPlaneC),
+    invHalfPlA: halfPlaneA,
+    invHalfPlB: halfPlaneB,
+    invHalfPlC: halfPlaneC,
     t: tilingData,
   };
-}
-
-function mat4(m: Mat): number[] {
-  const r: number[] = Array.from({ length: 16 }, () => 0);
-  r[0] = m[0].re;
-  r[1] = m[0].im;
-  r[2] = m[2].re;
-  r[3] = m[2].im;
-  r[4] = -m[0].im;
-  r[5] = m[0].re;
-  r[6] = -m[2].im;
-  r[7] = m[2].re;
-  r[8] = m[1].re;
-  r[9] = m[1].im;
-  r[10] = m[3].re;
-  r[11] = m[3].im;
-  r[12] = -m[1].im;
-  r[13] = m[1].re;
-  r[14] = -m[3].im;
-  r[15] = m[3].re;
-  return r;
 }
 
 const vsSource = /* glsl */ `#version 300 es
@@ -602,20 +602,20 @@ function main(): void {
     gl.bindVertexArray(vao);
 
     gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
-    gl.uniformMatrix4fv(matALocation, false, mat4(data.matA));
-    gl.uniformMatrix4fv(matBLocation, false, mat4(data.matB));
-    gl.uniformMatrix4fv(matCLocation, false, mat4(data.matC));
-    gl.uniformMatrix4fv(invHalfPlALocation, false, mat4(data.invHalfPlA));
-    gl.uniformMatrix4fv(invHalfPlBLocation, false, mat4(data.invHalfPlB));
-    gl.uniformMatrix4fv(invHalfPlCLocation, false, mat4(data.invHalfPlC));
+    gl.uniformMatrix4fv(matALocation, false, data.matA);
+    gl.uniformMatrix4fv(matBLocation, false, data.matB);
+    gl.uniformMatrix4fv(matCLocation, false, data.matC);
+    gl.uniformMatrix4fv(invHalfPlALocation, false, data.invHalfPlA);
+    gl.uniformMatrix4fv(invHalfPlBLocation, false, data.invHalfPlB);
+    gl.uniformMatrix4fv(invHalfPlCLocation, false, data.invHalfPlC);
     if (data.t && "invHalfPl1" in data.t) {
-      gl.uniformMatrix4fv(invHalfPl1Location, false, mat4(data.t.invHalfPl1));
+      gl.uniformMatrix4fv(invHalfPl1Location, false, data.t.invHalfPl1);
     }
     if (data.t && "invHalfPl2" in data.t) {
-      gl.uniformMatrix4fv(invHalfPl2Location, false, mat4(data.t.invHalfPl2));
+      gl.uniformMatrix4fv(invHalfPl2Location, false, data.t.invHalfPl2);
     }
     if (data.t && "invHalfPl3" in data.t) {
-      gl.uniformMatrix4fv(invHalfPl3Location, false, mat4(data.t.invHalfPl3));
+      gl.uniformMatrix4fv(invHalfPl3Location, false, data.t.invHalfPl3);
     }
     gl.uniform1i(modeLocation, modeIndex(mode));
     gl.uniform1i(showTrianglesLocation, showTriangles ? 1 : 0);
