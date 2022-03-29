@@ -38,14 +38,6 @@ function transl(dist: number): Mat {
   return fromCol(fromReal(Math.sinh(dist / 2)), fromReal(Math.cosh(dist / 2)));
 }
 
-function refl(line: Mat): Mat {
-  const out = mat4.create();
-  conjMat(out, line);
-  mat4.adjoint(out, out);
-  mat4.mul(out, line, out);
-  return out;
-}
-
 function reflRot(angle: number): Mat {
   return fromCol(zero, fromPolar(1, -angle));
 }
@@ -82,6 +74,18 @@ function fromPolar(mod: number, arg: number): C {
 
 function fromReal(x: number): C {
   return toC(x, 0);
+}
+
+// Inverse for matrices of the form [conj(w), conj(v), v, w] with determinant 1.
+function inv(out: mat4, m: ReadonlyMat4) {
+  // prettier-ignore
+  mat4.set(
+    out,
+    m[10], m[11], -m[2], -m[3],
+    m[14], m[15], -m[6], -m[7],
+    -m[8], -m[9], m[0], m[1],
+    -m[12], -m[13], m[4], m[5]
+  );
 }
 
 function quadraticRoots(
@@ -209,9 +213,9 @@ function calculateData(params: Params, mode: Mode): DrawData {
   const halfPlaneB: Mat = rot(Math.PI + a);
   const halfPlaneA: Mat = mulMat(transl(C), rot(Math.PI - b));
 
-  const matC: Mat = refl(halfPlaneC);
-  const matB: Mat = refl(halfPlaneB);
-  const matA: Mat = refl(halfPlaneA);
+  const matC: Mat = id;
+  const matB: Mat = reflRot(Math.PI + a);
+  const matA: Mat = mulMat(transl(C), reflRot(Math.PI - b), transl(-C));
 
   function p_qr(): x_yzData {
     const halfPlane: Mat = mulMat(
@@ -222,7 +226,7 @@ function calculateData(params: Params, mode: Mode): DrawData {
       rot(Math.PI / 2)
     );
 
-    mat4.adjoint(halfPlane, halfPlane);
+    inv(halfPlane, halfPlane);
     return {
       invHalfPl1: halfPlane,
     };
@@ -239,7 +243,7 @@ function calculateData(params: Params, mode: Mode): DrawData {
       rot(Math.PI / 2)
     );
 
-    mat4.adjoint(halfPlane, halfPlane);
+    inv(halfPlane, halfPlane);
     return {
       invHalfPl1: halfPlane,
     };
@@ -251,7 +255,7 @@ function calculateData(params: Params, mode: Mode): DrawData {
       rot(Math.PI / 2)
     );
 
-    mat4.adjoint(halfPlane, halfPlane);
+    inv(halfPlane, halfPlane);
     return {
       invHalfPl1: halfPlane,
     };
@@ -272,8 +276,8 @@ function calculateData(params: Params, mode: Mode): DrawData {
     );
     const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
 
-    mat4.adjoint(halfPlane1, halfPlane1);
-    mat4.adjoint(halfPlane2, halfPlane2);
+    inv(halfPlane1, halfPlane1);
+    inv(halfPlane2, halfPlane2);
     return {
       invHalfPl1: halfPlane1,
       invHalfPl2: halfPlane2,
@@ -306,9 +310,9 @@ function calculateData(params: Params, mode: Mode): DrawData {
       halfPlane1Conj
     );
 
-    mat4.adjoint(halfPlane1, halfPlane1);
-    mat4.adjoint(halfPlane2, halfPlane2);
-    mat4.adjoint(halfPlane3, halfPlane3);
+    inv(halfPlane1, halfPlane1);
+    inv(halfPlane2, halfPlane2);
+    inv(halfPlane3, halfPlane3);
     return {
       invHalfPl1: halfPlane1,
       invHalfPl2: halfPlane2,
@@ -338,9 +342,9 @@ function calculateData(params: Params, mode: Mode): DrawData {
       break;
   }
 
-  mat4.adjoint(halfPlaneA, halfPlaneA);
-  mat4.adjoint(halfPlaneB, halfPlaneB);
-  mat4.adjoint(halfPlaneC, halfPlaneC);
+  inv(halfPlaneA, halfPlaneA);
+  inv(halfPlaneB, halfPlaneB);
+  inv(halfPlaneC, halfPlaneC);
   return {
     matA: matA,
     matB: matB,
