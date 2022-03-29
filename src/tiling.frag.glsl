@@ -74,7 +74,7 @@ int pqr_Region(mat2x4 p) {
 void main() {
   mat2 z = complex(
     2.0 * gl_FragCoord.x / u_resolution.x - 1.0,
-    1.0 - 2.0 * gl_FragCoord.y / u_resolution.y
+    2.0 * gl_FragCoord.y / u_resolution.y - 1.0
   );
 
   if (determinant(z) > 1.0) {
