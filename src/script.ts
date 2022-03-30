@@ -38,6 +38,14 @@ function transl(dist: number): Mat {
   return fromCol(fromReal(Math.sinh(dist / 2)), fromReal(Math.cosh(dist / 2)));
 }
 
+function refl(line: Mat): Mat {
+  const out = mat4.create();
+  conjMat(out, line);
+  mat4.adjoint(out, out);
+  mat4.mul(out, line, out);
+  return out;
+}
+
 function reflRot(angle: number): Mat {
   return fromCol(zero, fromPolar(1, -angle));
 }
@@ -179,13 +187,19 @@ type DrawData = {
   t: undefined | x_yzData | xy_zData | pqr_Data;
 };
 type x_yzData = {
+  mat1: Mat;
   invHalfPl1: Mat;
 };
 type xy_zData = {
+  mat1: Mat;
+  mat2: Mat;
   invHalfPl1: Mat;
   invHalfPl2: Mat;
 };
 type pqr_Data = {
+  mat1: Mat;
+  mat2: Mat;
+  mat3: Mat;
   invHalfPl1: Mat;
   invHalfPl2: Mat;
   invHalfPl3: Mat;
@@ -226,8 +240,10 @@ function calculateData(params: Params, mode: Mode): DrawData {
       rot(Math.PI / 2)
     );
 
+    const mat1 = refl(halfPlane);
     inv(halfPlane, halfPlane);
     return {
+      mat1: mat1,
       invHalfPl1: halfPlane,
     };
   }
@@ -243,8 +259,10 @@ function calculateData(params: Params, mode: Mode): DrawData {
       rot(Math.PI / 2)
     );
 
+    const mat1 = refl(halfPlane);
     inv(halfPlane, halfPlane);
     return {
+      mat1: mat1,
       invHalfPl1: halfPlane,
     };
   }
@@ -255,8 +273,10 @@ function calculateData(params: Params, mode: Mode): DrawData {
       rot(Math.PI / 2)
     );
 
+    const mat1 = refl(halfPlane);
     inv(halfPlane, halfPlane);
     return {
+      mat1: mat1,
       invHalfPl1: halfPlane,
     };
   }
@@ -276,9 +296,13 @@ function calculateData(params: Params, mode: Mode): DrawData {
     );
     const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
 
+    const mat1 = refl(halfPlane1);
+    const mat2 = refl(halfPlane2);
     inv(halfPlane1, halfPlane1);
     inv(halfPlane2, halfPlane2);
     return {
+      mat1: mat1,
+      mat2: mat2,
       invHalfPl1: halfPlane1,
       invHalfPl2: halfPlane2,
     };
@@ -310,10 +334,16 @@ function calculateData(params: Params, mode: Mode): DrawData {
       halfPlane1Conj
     );
 
+    const mat1 = refl(halfPlane1);
+    const mat2 = refl(halfPlane2);
+    const mat3 = refl(halfPlane3);
     inv(halfPlane1, halfPlane1);
     inv(halfPlane2, halfPlane2);
     inv(halfPlane3, halfPlane3);
     return {
+      mat1: mat1,
+      mat2: mat2,
+      mat3: mat3,
       invHalfPl1: halfPlane1,
       invHalfPl2: halfPlane2,
       invHalfPl3: halfPlane3,
@@ -434,6 +464,9 @@ function main(): void {
   const invHalfPlALocation = gl.getUniformLocation(program, "u_invHalfPlA");
   const invHalfPlBLocation = gl.getUniformLocation(program, "u_invHalfPlB");
   const invHalfPlCLocation = gl.getUniformLocation(program, "u_invHalfPlC");
+  const mat1Location = gl.getUniformLocation(program, "u_mat1");
+  const mat2Location = gl.getUniformLocation(program, "u_mat2");
+  const mat3Location = gl.getUniformLocation(program, "u_mat3");
   const invHalfPl1Location = gl.getUniformLocation(program, "u_invHalfPl1");
   const invHalfPl2Location = gl.getUniformLocation(program, "u_invHalfPl2");
   const invHalfPl3Location = gl.getUniformLocation(program, "u_invHalfPl3");
@@ -441,6 +474,11 @@ function main(): void {
   const showTrianglesLocation = gl.getUniformLocation(
     program,
     "u_showTriangles"
+  );
+  const showEdgesLocation = gl.getUniformLocation(program, "u_showEdges");
+  const colorPolygonsLocation = gl.getUniformLocation(
+    program,
+    "u_colorPolygons"
   );
 
   const positionBuffer = gl.createBuffer();
@@ -455,7 +493,13 @@ function main(): void {
   );
   gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
 
-  function render(data: DrawData, mode: Mode, showTriangles: boolean): void {
+  function render(
+    data: DrawData,
+    mode: Mode,
+    showTriangles: boolean,
+    showEdges: boolean,
+    colorPolygons: boolean
+  ): void {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
     gl.clearColor(0, 0, 0, 0);
@@ -472,16 +516,21 @@ function main(): void {
     gl.uniformMatrix4fv(invHalfPlBLocation, false, data.invHalfPlB);
     gl.uniformMatrix4fv(invHalfPlCLocation, false, data.invHalfPlC);
     if (data.t && "invHalfPl1" in data.t) {
+      gl.uniformMatrix4fv(mat1Location, false, data.t.mat1);
       gl.uniformMatrix4fv(invHalfPl1Location, false, data.t.invHalfPl1);
     }
     if (data.t && "invHalfPl2" in data.t) {
+      gl.uniformMatrix4fv(mat2Location, false, data.t.mat2);
       gl.uniformMatrix4fv(invHalfPl2Location, false, data.t.invHalfPl2);
     }
     if (data.t && "invHalfPl3" in data.t) {
+      gl.uniformMatrix4fv(mat3Location, false, data.t.mat3);
       gl.uniformMatrix4fv(invHalfPl3Location, false, data.t.invHalfPl3);
     }
     gl.uniform1i(modeLocation, modeIndex(mode));
     gl.uniform1i(showTrianglesLocation, showTriangles ? 1 : 0);
+    gl.uniform1i(showEdgesLocation, showEdges ? 1 : 0);
+    gl.uniform1i(colorPolygonsLocation, colorPolygons ? 1 : 0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
@@ -526,19 +575,27 @@ function main(): void {
   const modeSelect = document.getElementById(
     "select-mode"
   ) as HTMLSelectElement;
-  modeSelect.appendChild(
-    new Option("fundamental triangles", "triangles", true)
-  );
   modeSelect.appendChild(new Option("p | q r", "p|qr"));
   modeSelect.appendChild(new Option("q | p r", "q|pr"));
   modeSelect.appendChild(new Option("r | p q", "r|pq"));
   modeSelect.appendChild(new Option("r p | q", "rp|q"));
-  modeSelect.appendChild(new Option("p q r |", "pqr|"));
+  modeSelect.appendChild(new Option("p q r |", "pqr|", true, true));
+  modeSelect.appendChild(new Option("fundamental triangles", "triangles"));
 
   const showTrianglesCheck = document.getElementById(
     "check-show-triangles"
   ) as HTMLInputElement;
   showTrianglesCheck.checked = true;
+
+  const showEdgesCheck = document.getElementById(
+    "check-show-edges"
+  ) as HTMLInputElement;
+  showEdgesCheck.checked = false;
+
+  const colorPolygonsCheck = document.getElementById(
+    "check-color-polygons"
+  ) as HTMLInputElement;
+  colorPolygonsCheck.checked = true;
 
   const status = document.getElementById("status") as HTMLParagraphElement;
 
@@ -548,6 +605,8 @@ function main(): void {
     const r = parseInt((angleInputs["input-r"] as HTMLInputElement).value);
     const mode = modeSelect.value as Mode;
     const showTriangles = showTrianglesCheck.checked;
+    const showEdges = showEdgesCheck.checked;
+    const colorPolygons = colorPolygonsCheck.checked;
 
     if (q * r + p * r + p * q >= p * q * r) {
       gl.clearColor(0, 0, 0, 0);
@@ -558,11 +617,16 @@ function main(): void {
     }
     status.textContent = "";
     const data = calculateData({ p: p, q: q, r: r }, mode);
-    render(data, mode, showTriangles);
+    render(data, mode, showTriangles, showEdges, colorPolygons);
   }
 
   modeSelect.addEventListener("change", update);
+  modeSelect.addEventListener("change", () => {
+    colorPolygonsCheck.disabled = modeSelect.value === "triangles";
+  });
   showTrianglesCheck.addEventListener("change", update);
+  showEdgesCheck.addEventListener("change", update);
+  colorPolygonsCheck.addEventListener("change", update);
 
   update();
 }
