@@ -160,7 +160,15 @@ function dehomogenize(p: C2): C {
 }
 
 type Params = { p: number; q: number; r: number };
-type Mode = "triangles" | "p|qr" | "q|pr" | "r|pq" | "rp|q" | "pqr|";
+type Mode =
+  | "triangles"
+  | "p|qr"
+  | "q|pr"
+  | "r|pq"
+  | "rp|q"
+  | "qr|p"
+  | "pq|r"
+  | "pqr|";
 
 function modeIndex(m: Mode): number {
   switch (m) {
@@ -171,6 +179,8 @@ function modeIndex(m: Mode): number {
     case "r|pq":
       return 1;
     case "rp|q":
+    case "qr|p":
+    case "pq|r":
       return 2;
     case "pqr|":
       return 3;
@@ -308,6 +318,60 @@ function calculateData(params: Params, mode: Mode): DrawData {
     };
   }
 
+  function qr_p(): xy_zData {
+    const euclDistToPoint = (
+      realLineIntxns(mulMat(rot(-a / 2), halfPlaneA)) as [number, number]
+    )[0];
+
+    const halfPlane1: Mat = mulMat(
+      transl(
+        Math.atanh(
+          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
+        )
+      ),
+      rot(Math.PI / 2)
+    );
+    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
+
+    const mat1 = refl(halfPlane1);
+    const mat2 = refl(halfPlane2);
+    inv(halfPlane1, halfPlane1);
+    inv(halfPlane2, halfPlane2);
+    return {
+      mat1: mat1,
+      mat2: mat2,
+      invHalfPl1: halfPlane1,
+      invHalfPl2: halfPlane2,
+    };
+  }
+
+  function pq_r(): xy_zData {
+    const euclDistToPoint = (
+      realLineIntxns(mulMat(rot(-a / 2), halfPlaneA)) as [number, number]
+    )[0];
+
+    const halfPlane1: Mat = mulMat(
+      transl(
+        Math.atanh(
+          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
+        )
+      ),
+      rot(Math.PI / 2)
+    );
+    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
+
+    const mat1 = refl(halfPlane1);
+    const mat2 = refl(halfPlane2);
+    inv(halfPlane1, halfPlane1);
+    inv(halfPlane2, halfPlane2);
+    return {
+      mat1: mat1,
+      mat2: mat2,
+      invHalfPl1: halfPlane1,
+      invHalfPl2: halfPlane2,
+    };
+  }
+
   function pqr_(): pqr_Data {
     const euclDistToPoint = (
       realLineIntxns(mulMat(rot(-a / 2), transl(C), rot(-b / 2))) as [
@@ -366,6 +430,12 @@ function calculateData(params: Params, mode: Mode): DrawData {
       break;
     case "rp|q":
       tilingData = rp_q();
+      break;
+    case "qr|p":
+      tilingData = qr_p();
+      break;
+    case "pq|r":
+      tilingData = pq_r();
       break;
     case "pqr|":
       tilingData = pqr_();
@@ -579,6 +649,8 @@ function main(): void {
   modeSelect.appendChild(new Option("q | p r", "q|pr"));
   modeSelect.appendChild(new Option("r | p q", "r|pq"));
   modeSelect.appendChild(new Option("r p | q", "rp|q"));
+  modeSelect.appendChild(new Option("q r | p", "qr|p"));
+  modeSelect.appendChild(new Option("p q | r", "pq|r"));
   modeSelect.appendChild(new Option("p q r |", "pqr|", true, true));
   modeSelect.appendChild(new Option("fundamental triangles", "triangles"));
 
