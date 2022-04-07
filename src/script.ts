@@ -11,6 +11,13 @@ type Mat = mat4;
 
 const zero = fromReal(0);
 const id: Mat = mat4.create();
+// prettier-ignore
+const rotPi: Mat = mat4.fromValues(
+  0, 1, 0, 0,
+  -1, 0, 0, 0,
+  0, 0, 0, -1,
+  0, 0, 1, 0
+)
 
 function toC(re: number, im: number): C {
   // prettier-ignore
@@ -48,10 +55,6 @@ function refl(line: Mat): Mat {
 
 function reflRot(angle: number): Mat {
   return fromCol(zero, fromPolar(1, -angle));
-}
-
-function conjReflRot(angle: number): Mat {
-  return fromCol(zero, fromPolar(1, angle));
 }
 
 function conjMat(out: mat4, m: ReadonlyMat4) {
@@ -228,10 +231,11 @@ function calculateData(params: Params, mode: Mode): DrawData {
 
   const coshC = (cos_c + cos_a * cos_b) / (sin_a * sin_b);
   const coshB = (cos_b + cos_c * cos_a) / (sin_c * sin_a);
-  const coshA = (cos_a + cos_b * cos_c) / (sin_b * sin_c);
+  // const coshA = (cos_a + cos_b * cos_c) / (sin_b * sin_c);
   const C = Math.acosh(coshC);
   const B = Math.acosh(coshB);
-  const A = Math.acosh(coshA);
+  // const A = Math.acosh(coshA);
+  const sinhC = Math.sqrt(coshC ** 2 - 1);
 
   const halfPlaneC: Mat = id;
   const halfPlaneB: Mat = rot(Math.PI + a);
@@ -241,14 +245,28 @@ function calculateData(params: Params, mode: Mode): DrawData {
   const matB: Mat = reflRot(Math.PI + a);
   const matA: Mat = mulMat(transl(C), reflRot(Math.PI - b), transl(-C));
 
-  function p_qr(): x_yzData {
-    const halfPlane: Mat = mulMat(
-      reflRot(a / 2),
-      transl(B),
-      conjReflRot(-c / 2),
-      transl(-A + Math.atanh(cos_b * Math.sqrt(1 - Math.pow(coshC, -2)))),
+  function halfPlanePerpToC(angle: number, distE: number) {
+    return mulMat(
+      transl(Math.atanh(Math.cos(angle) * 2 * (distE / (1 + distE ** 2)))),
       rot(Math.PI / 2)
     );
+  }
+
+  function halfPlanePerpToB(angle: number, distE: number) {
+    return mulMat(
+      reflRot(a / 2),
+      transl(Math.atanh(Math.cos(a - angle) * 2 * (distE / (1 + distE ** 2)))),
+      rot(-Math.PI / 2)
+    );
+  }
+
+  function p_qr(): x_yzData {
+    const sinhD = sin_b * sinhC;
+    const coshD = Math.sqrt(1 + sinhD ** 2);
+    const angle = Math.acos(
+      (sin_b * coshD * coshC) / (1 + sin_b * sinhD * sinhC)
+    );
+    const halfPlane: Mat = mulMat(rot(angle), rotPi);
 
     const mat1 = refl(halfPlane);
     inv(halfPlane, halfPlane);
@@ -259,15 +277,8 @@ function calculateData(params: Params, mode: Mode): DrawData {
   }
 
   function q_pr(): x_yzData {
-    const halfPlane: Mat = mulMat(
-      transl(C),
-      reflRot(-b / 2),
-      transl(-A),
-      conjReflRot(c / 2),
-
-      transl(Math.atanh(cos_c * Math.sqrt(1 - Math.pow(coshA, -2)))),
-      rot(Math.PI / 2)
-    );
+    // This is a hyperbolic distance of C.
+    const halfPlane = halfPlanePerpToB(0, Math.sqrt((coshC - 1) / (coshC + 1)));
 
     const mat1 = refl(halfPlane);
     inv(halfPlane, halfPlane);
@@ -278,10 +289,8 @@ function calculateData(params: Params, mode: Mode): DrawData {
   }
 
   function r_pq(): x_yzData {
-    const halfPlane: Mat = mulMat(
-      transl(Math.atanh(cos_a * Math.sqrt(1 - Math.pow(coshB, -2)))),
-      rot(Math.PI / 2)
-    );
+    // This is a hyperbolic distance of B.
+    const halfPlane = halfPlanePerpToC(a, Math.sqrt((coshB - 1) / (coshB + 1)));
 
     const mat1 = refl(halfPlane);
     inv(halfPlane, halfPlane);
@@ -291,20 +300,13 @@ function calculateData(params: Params, mode: Mode): DrawData {
     };
   }
 
-  function rp_q(): xy_zData {
+  function qr_p(): xy_zData {
     const euclDistToPoint = (
       realLineIntxns(mulMat(rot(-a / 2), halfPlaneA)) as [number, number]
     )[0];
 
-    const halfPlane1: Mat = mulMat(
-      transl(
-        Math.atanh(
-          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
-        )
-      ),
-      rot(Math.PI / 2)
-    );
-    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
+    const halfPlane1 = halfPlanePerpToC(a / 2, euclDistToPoint);
+    const halfPlane2 = mulMat(halfPlanePerpToB(a / 2, euclDistToPoint), rotPi);
 
     const mat1 = refl(halfPlane1);
     const mat2 = refl(halfPlane2);
@@ -318,20 +320,16 @@ function calculateData(params: Params, mode: Mode): DrawData {
     };
   }
 
-  function qr_p(): xy_zData {
+  function rp_q(): xy_zData {
+    const bisectorB = mulMat(transl(C), rot(-b / 2));
     const euclDistToPoint = (
-      realLineIntxns(mulMat(rot(-a / 2), halfPlaneA)) as [number, number]
+      realLineIntxns(mulMat(rot(-a), bisectorB)) as [number, number]
     )[0];
 
-    const halfPlane1: Mat = mulMat(
-      transl(
-        Math.atanh(
-          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
-        )
-      ),
-      rot(Math.PI / 2)
-    );
-    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
+    const halfPlane2 = mulMat(halfPlanePerpToC(a, euclDistToPoint), rotPi);
+    const conjHalfPlane2 = mat4.clone(halfPlane2);
+    conjMat(conjHalfPlane2, conjHalfPlane2);
+    const halfPlane1 = mulMat(refl(bisectorB), conjHalfPlane2, rotPi);
 
     const mat1 = refl(halfPlane1);
     const mat2 = refl(halfPlane2);
@@ -346,19 +344,13 @@ function calculateData(params: Params, mode: Mode): DrawData {
   }
 
   function pq_r(): xy_zData {
-    const euclDistToPoint = (
-      realLineIntxns(mulMat(rot(-a / 2), halfPlaneA)) as [number, number]
-    )[0];
+    const bisectorC = mulMat(rot(a), transl(B), rot(c / 2));
+    const euclDistToPoint = (realLineIntxns(bisectorC) as [number, number])[0];
 
-    const halfPlane1: Mat = mulMat(
-      transl(
-        Math.atanh(
-          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
-        )
-      ),
-      rot(Math.PI / 2)
-    );
-    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1);
+    const halfPlane1 = halfPlanePerpToB(0, euclDistToPoint);
+    const conjHalfPlane1 = mat4.clone(halfPlane1);
+    conjMat(conjHalfPlane1, conjHalfPlane1);
+    const halfPlane2 = mulMat(refl(bisectorC), conjHalfPlane1, rotPi);
 
     const mat1 = refl(halfPlane1);
     const mat2 = refl(halfPlane2);
@@ -380,22 +372,13 @@ function calculateData(params: Params, mode: Mode): DrawData {
       ]
     )[0];
 
-    const halfPlane1: Mat = mulMat(
-      transl(
-        Math.atanh(
-          Math.cos(a / 2) * 2 * (euclDistToPoint / (1 + euclDistToPoint ** 2))
-        )
-      ),
-      rot(Math.PI / 2)
-    );
-    const halfPlane1Conj = mat4.clone(halfPlane1);
-    conjMat(halfPlane1Conj, halfPlane1Conj);
-    const halfPlane2: Mat = mulMat(reflRot(a / 2), halfPlane1Conj);
+    const halfPlane1 = halfPlanePerpToC(a / 2, euclDistToPoint);
+    const halfPlane2 = halfPlanePerpToB(a / 2, euclDistToPoint);
     const halfPlane3: Mat = mulMat(
       transl(C),
       reflRot(-b / 2),
       transl(-C),
-      halfPlane1Conj
+      halfPlane1
     );
 
     const mat1 = refl(halfPlane1);
@@ -648,8 +631,8 @@ function main(): void {
   modeSelect.appendChild(new Option("p | q r", "p|qr"));
   modeSelect.appendChild(new Option("q | p r", "q|pr"));
   modeSelect.appendChild(new Option("r | p q", "r|pq"));
-  modeSelect.appendChild(new Option("r p | q", "rp|q"));
   modeSelect.appendChild(new Option("q r | p", "qr|p"));
+  modeSelect.appendChild(new Option("r p | q", "rp|q"));
   modeSelect.appendChild(new Option("p q | r", "pq|r"));
   modeSelect.appendChild(new Option("p q r |", "pqr|", true, true));
   modeSelect.appendChild(new Option("fundamental triangles", "triangles"));

@@ -97,10 +97,10 @@ int pqr_Region(mat2x4 p) {
   bool ins2 = inHalfPlane(u_invHalfPl2, p);
   bool ins3 = inHalfPlane(u_invHalfPl3, p);
 
-  if (ins2 && !ins3) {
+  if (ins2 && ins3) {
     return 1;
   }
-  if (ins3 && !ins1) {
+  if (!ins3 && !ins1) {
     return 2;
   }
   return 0;
@@ -111,8 +111,8 @@ bool inpqr_Boundary(mat2x4 p) {
   bool ins2 = inHalfPlane(u_invHalfPl2, p);
   bool ins3 = inHalfPlane(u_invHalfPl3, p);
 
-  bool in1 = distToLine2(u_mat1, p) < thickness && !(ins2 && !ins3);
-  bool in2 = distToLine2(u_mat2, p) < thickness && !(ins3 && !ins1);
+  bool in1 = distToLine2(u_mat1, p) < thickness && !(ins2 && ins3);
+  bool in2 = distToLine2(u_mat2, p) < thickness && !(!ins3 && !ins1);
   bool in3 = distToLine2(u_mat3, p) < thickness && !(ins1 && !ins2);
   return in1 || in2 || in3;
 }
