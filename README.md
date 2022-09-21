@@ -1,3 +1,3 @@
 # hyperbolic-tiling
 
-for now see demo at https://www.lucy-zhang.me/tiling/
+for now see demo at https://www.thomas-zhang.me/tiling/
